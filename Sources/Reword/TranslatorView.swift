@@ -457,6 +457,7 @@ struct ModelDownloadView: View {
 struct SettingsView: View {
     @AppStorage(Prefs.first) private var first = "en"
     @AppStorage(Prefs.second) private var second = "zh-Hans"
+    @AppStorage(Prefs.otherTarget) private var otherTarget = "primary"
     @AppStorage(Prefs.idleUnloadSeconds) private var idleUnload = 300
     @AppStorage(ModelStore.quantKey) private var quant = ModelQuant.q4.rawValue
     @AppStorage(MenuBarIcon.key) private var menuIcon = MenuBarIcon.fallback
@@ -488,11 +489,16 @@ struct SettingsView: View {
                 Picker("Primary language", selection: $first) {
                     ForEach(AppLanguage.all) { Text("\(LanguageTools.flag($0.id))  \($0.name)").tag($0.id) }
                 }
-                .help("Text in any other language is translated into this one.")
+                .help("Text in your secondary language is translated into this one.")
                 Picker("Secondary language", selection: $second) {
                     ForEach(AppLanguage.all) { Text("\(LanguageTools.flag($0.id))  \($0.name)").tag($0.id) }
                 }
                 .help("Text in your primary language is translated into this one.")
+                Picker("Other languages to", selection: $otherTarget) {
+                    Text("\(LanguageTools.flag(first))  \(LanguageTools.displayName(first))").tag("primary")
+                    Text("\(LanguageTools.flag(second))  \(LanguageTools.displayName(second))").tag("secondary")
+                }
+                .help("Where text in any other language is translated. Picking one of your two languages for such text in the translation window changes it too.")
             }
 
             Section {

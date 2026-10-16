@@ -9,8 +9,7 @@ func runCommandLine(_ args: [String]) async -> Int32 {
     Prefs.registerDefaults()
     let defaults = UserDefaults.standard
     let source = value("--from") ?? LanguageTools.detect(text) ?? "en"
-    let target = value("--to") ?? LanguageTools.target(for: source, first: defaults.string(forKey: Prefs.first)!,
-                                                      second: defaults.string(forKey: Prefs.second)!)
+    let target = value("--to") ?? Prefs.autoTarget(for: source)
     print("\(source) → \(target)")
     var failures: Int32 = 0
     for engine in Engines.all {

@@ -40,8 +40,12 @@ enum LanguageTools {
     }
 
     /// Easydict-style target choice: text in the first language goes to the second, everything else to the first.
-    static func target(for source: String, first: String, second: String) -> String {
-        same(source, first) ? second : first
+    /// The supported language for a system language identifier ("uk-PT" → "uk", "zh-Hant-TW" → "zh-Hant").
+    static func appLanguageID(_ identifier: String) -> String? {
+        let language = Locale.Language(identifier: identifier)
+        guard var id = language.languageCode?.identifier else { return nil }
+        if id == "zh" { id = language.script?.identifier == "Hant" ? "zh-Hant" : "zh-Hans" }
+        return AppLanguage.all.contains { $0.id == id } ? id : nil
     }
 
     static func displayName(_ id: String) -> String {
