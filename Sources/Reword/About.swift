@@ -43,10 +43,9 @@ struct AboutView: View {
 
     var body: some View {
         VStack(spacing: 10) {
-            Image(systemName: MenuBarIcon.current)
-                .font(.system(size: 40, weight: .regular))
-                .foregroundStyle(.tint)
-                .padding(.top, 6)
+            Image(nsImage: NSApp.applicationIconImage)
+                .resizable()
+                .frame(width: 96, height: 96)
             Text("Reword").font(.title2.weight(.semibold))
             Text(AppInfo.versionLine).font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
             Text("A very simple offline translator.\nText, selections and screenshots, translated on your Mac.")

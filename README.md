@@ -1,3 +1,5 @@
+<p align="center"><img src="docs/icon.png" alt="Reword icon" width="128"></p>
+
 # Reword
 
 **A very simple offline translator for your Mac.** Select text, snap a screenshot or just type, and get the
