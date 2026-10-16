@@ -14,13 +14,13 @@ enum OnboardingWindow {
     static func show(delegate: NSWindowDelegate?, tryIt: @escaping () -> Void) {
         UserDefaults.standard.set(true, forKey: shownKey)
         if window == nil {
-            let host = NSHostingController(rootView: OnboardingView(tryIt: tryIt, close: { window?.performClose(nil) }))
+            let host = NSHostingController(rootView: OnboardingView(tryIt: tryIt, close: { Self.window?.performClose(nil) }))
             host.sizingOptions = [.preferredContentSize]
-            let window = NSWindow(contentViewController: host)
-            window.title = "Welcome to Reword"
-            window.styleMask = [.titled, .closable]
-            window.isReleasedWhenClosed = false
-            self.window = window
+            let newWindow = NSWindow(contentViewController: host)
+            newWindow.title = "Welcome to Reword"
+            newWindow.styleMask = [.titled, .closable]
+            newWindow.isReleasedWhenClosed = false
+            window = newWindow
         }
         window?.delegate = delegate
         if window?.isVisible != true { window?.center() }
