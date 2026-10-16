@@ -1,0 +1,22 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  build:
+    runs-on: macos-26
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Build
+        run: |
+          scripts/fetch_llama.sh
+          swift build -c release

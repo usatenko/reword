@@ -1,0 +1,64 @@
+name: Release
+
+# Push a tag like v1.0.0 to build, sign (Developer ID), notarize and publish Reword-1.0.0.dmg.
+on:
+  push:
+    tags: ['v*']
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: macos-26
+    env:
+      KEYCHAIN: ${{ github.workspace }}/../signing.keychain-db
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Select Xcode
+        run: |
+          sudo xcode-select -s "$(ls -d /Applications/Xcode_2[6-9]*.app | sort -V | tail -1)"
+          xcodebuild -version
+
+      - name: Import Developer ID certificate
+        env:
+          P12_BASE64: ${{ secrets.DEVELOPER_ID_P12_BASE64 }}
+          P12_PASSWORD: ${{ secrets.DEVELOPER_ID_P12_PASSWORD }}
+        run: |
+          KEYCHAIN_PASSWORD="$(uuidgen)"
+          echo "$P12_BASE64" | base64 --decode > "$RUNNER_TEMP/cert.p12"
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN"
+          security import "$RUNNER_TEMP/cert.p12" -k "$KEYCHAIN" -P "$P12_PASSWORD" -T /usr/bin/codesign
+          security set-key-partition-list -S apple-tool:,apple: -s -k "$KEYCHAIN_PASSWORD" "$KEYCHAIN" >/dev/null
+          security list-keychains -d user -s "$KEYCHAIN" $(security list-keychains -d user | tr -d '"')
+          rm "$RUNNER_TEMP/cert.p12"
+          security find-identity -v -p codesigning "$KEYCHAIN"
+
+      - name: Write notarization key
+        env:
+          NOTARY_KEY_P8_BASE64: ${{ secrets.NOTARY_KEY_P8_BASE64 }}
+        run: echo "$NOTARY_KEY_P8_BASE64" | base64 --decode > "$RUNNER_TEMP/notary.p8"
+
+      - name: Build, sign, notarize
+        env:
+          NOTARY_KEY_PATH: ${{ runner.temp }}/notary.p8
+          NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
+          NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
+          REQUIRE_NOTARIZATION: "1"
+        run: scripts/release.sh "${GITHUB_REF_NAME#v}"
+
+      - name: Publish GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.sha256 \
+            --title "Reword ${GITHUB_REF_NAME#v}" --generate-notes
+
+      - name: Clean up signing material
+        if: always()
+        run: |
+          security delete-keychain "$KEYCHAIN" 2>/dev/null || true
+          rm -f "$RUNNER_TEMP/notary.p8"
