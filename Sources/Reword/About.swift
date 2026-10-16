@@ -17,8 +17,9 @@ enum AppInfo {
 @MainActor
 enum AboutWindow {
     private static var window: NSWindow?
+    static var current: NSWindow? { window }
 
-    static func show() {
+    static func show(delegate: NSWindowDelegate? = nil) {
         if window == nil {
             let host = NSHostingController(rootView: AboutView())
             host.sizingOptions = [.preferredContentSize]
@@ -26,8 +27,10 @@ enum AboutWindow {
             window.title = "About Reword"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
+            window.delegate = delegate
             self.window = window
         }
+        if let delegate { window?.delegate = delegate }
         if window?.isVisible != true { window?.center() }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)

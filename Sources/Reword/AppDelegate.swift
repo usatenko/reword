@@ -177,7 +177,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     /// Settings is rebuilt on each open, so its permission polling stops while it's closed.
     func windowWillClose(_ notification: Notification) {
-        if (notification.object as? NSWindow) === settingsWindow { settingsWindow = nil }
+        guard let window = notification.object as? NSWindow, window !== panel else { return }
+        if window === settingsWindow { settingsWindow = nil }
+        // Once Settings and About are both closed, the panel floats again.
+        let otherOpen = [settingsWindow, AboutWindow.current].contains { $0 != nil && $0 !== window && $0!.isVisible }
+        if !otherOpen { panel.level = .floating }
     }
 
     func windowDidResignKey(_ notification: Notification) {
@@ -188,8 +192,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     @objc private func openAbout() {
-        if panel.isVisible, !model.pinned { panel.orderOut(nil) }
-        AboutWindow.show()
+        stepPanelAside()
+        AboutWindow.show(delegate: self)
+    }
+
+    /// The floating panel would cover Settings and About: hide it, or if pinned, drop it to normal level
+    /// until those windows close.
+    private func stepPanelAside() {
+        guard panel.isVisible else { return }
+        if model.pinned { panel.level = .normal } else { panel.orderOut(nil) }
     }
 
     @objc private func openSettings() {
@@ -203,8 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             window.delegate = self
             settingsWindow = window
         }
-        // The floating popup would cover Settings; step it aside unless the user pinned it.
-        if panel.isVisible, !model.pinned { panel.orderOut(nil) }
+        stepPanelAside()
         if settingsWindow?.isVisible != true { settingsWindow?.center() }
         NSApp.activate()
         settingsWindow?.makeKeyAndOrderFront(nil)

@@ -549,7 +549,7 @@ struct SettingsView: View {
                 LabeledContent("Version") {
                     HStack(spacing: 8) {
                         Text("\(AppInfo.version) (\(AppInfo.build))").foregroundStyle(.secondary).textSelection(.enabled)
-                        Button("About…") { AboutWindow.show() }
+                        Button("About…") { AboutWindow.show(delegate: NSApp.delegate as? NSWindowDelegate) }
                     }
                 }
             }
