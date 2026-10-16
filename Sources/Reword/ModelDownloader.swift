@@ -115,7 +115,7 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
         let final = ModelStore.url(for: quant)
         let staging = final.appendingPathExtension("download")
         var failure: String?
-        if status == 200 {
+        if status == 200 || status == 206 {                    // 206: continued an interrupted download
             do {
                 try ModelStore.ensureDirectory()
                 try? FileManager.default.removeItem(at: staging)
