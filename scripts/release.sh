@@ -21,8 +21,9 @@ IDENTITY="${REWORD_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | a
 REWORD_SIGN_IDENTITY="$IDENTITY" REWORD_HARDENED=1 REWORD_VERSION="$VERSION" \
     REWORD_BUILD="${GITHUB_RUN_NUMBER:-1}" "$ROOT/scripts/build_app.sh"
 APP="$ROOT/build/Reword.app"
-codesign -dv "$APP" 2>&1 | grep -q 'flags=.*runtime' || { echo "error: hardened runtime is not enabled" >&2; exit 1; }
-codesign -dv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application' || { echo "error: app is not Developer ID signed" >&2; exit 1; }
+SIGNATURE="$(codesign -dvv "$APP" 2>&1)"        # captured first: grep -q in a pipe trips pipefail
+[[ "$SIGNATURE" == *"flags="*"(runtime)"* ]] || { echo "error: hardened runtime is not enabled" >&2; exit 1; }
+[[ "$SIGNATURE" == *"Authority=Developer ID Application"* ]] || { echo "error: app is not Developer ID signed" >&2; exit 1; }
 
 # Disk image with the app and an Applications shortcut.
 DIST="$ROOT/dist"
@@ -44,7 +45,7 @@ elif [ -n "${NOTARY_PROFILE:-}" ]; then
     NOTARY_ARGS=(--keychain-profile "$NOTARY_PROFILE")
 fi
 if [ ${#NOTARY_ARGS[@]} -gt 0 ]; then
-    echo "Notarizing $DMG…"
+    echo "Notarizing ${DMG}..."
     xcrun notarytool submit "$DMG" "${NOTARY_ARGS[@]}" --wait --timeout 30m
     xcrun stapler staple "$DMG"
     xcrun stapler validate "$DMG"
