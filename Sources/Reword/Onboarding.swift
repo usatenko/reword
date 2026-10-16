@@ -39,6 +39,13 @@ enum OnboardingWindow {
     /// Dropped on close so its permission polling stops.
     /// Marked as seen only when dismissed (Done, Try It or the close button), not when it opens: if Reword
     /// restarts while it's open (e.g. for Screen Recording), it comes back.
+    /// Reword has no Dock icon, so once System Settings comes forward this window is stuck behind it. When a
+    /// permission changes there, bring the welcome window back so the user sees the step tick off.
+    static func bringBack() {
+        NSApp.activate()
+        window?.orderFrontRegardless()
+    }
+
     static func closed(dismissed: Bool) {
         if dismissed { UserDefaults.standard.set(installID, forKey: shownKey) }
         window = nil
@@ -149,9 +156,11 @@ struct OnboardingView: View {
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            let granted = (!axTrusted && SelectionReader.isTrusted) || (!screenAccess && ScreenOCR.hasScreenAccess)
             axTrusted = SelectionReader.isTrusted
             screenAccess = ScreenOCR.hasScreenAccess
             loginStatus = SMAppService.mainApp.status
+            if granted { OnboardingWindow.bringBack() }
         }
     }
 
