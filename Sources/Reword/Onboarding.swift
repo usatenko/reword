@@ -1,5 +1,4 @@
 import AppKit
-import ServiceManagement
 import SwiftUI
 
 /// First-launch welcome: where Reword lives, its shortcuts, and a live setup checklist.
@@ -81,7 +80,6 @@ struct OnboardingView: View {
     @ObservedObject private var downloader = ModelDownloader.shared
     @State private var axTrusted = SelectionReader.isTrusted
     @State private var screenAccess = ScreenOCR.hasScreenAccess
-    @State private var loginStatus = SMAppService.mainApp.status
 
     var body: some View {
         VStack(alignment: .leading, spacing: 16) {
@@ -153,18 +151,6 @@ struct OnboardingView: View {
                     step(done: true, title: "Languages", detail: languageDetail) {
                         Button("Change…") { (NSApp.delegate as? AppDelegate)?.openSettings() }.buttonStyle(.link)
                     }
-                    step(done: loginStatus == .enabled, title: "Launch at login",
-                         detail: "Optional: keep Reword ready after you restart your Mac.") {
-                        Toggle("", isOn: Binding(
-                            get: { loginStatus == .enabled || loginStatus == .requiresApproval },
-                            set: { on in
-                                try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
-                                loginStatus = SMAppService.mainApp.status
-                            }))
-                        .labelsHidden()
-                        .toggleStyle(.switch)
-                        .controlSize(.small)
-                    }
                 }
                 .padding(4)
             }
@@ -183,7 +169,6 @@ struct OnboardingView: View {
         // second, and each redraw would restart such a timer before it ever fires.
         .task {
             while !Task.isCancelled {
-                loginStatus = SMAppService.mainApp.status
                 await refreshPermissions()
                 try? await Task.sleep(for: .seconds(1))
             }
