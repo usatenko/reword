@@ -371,11 +371,8 @@ struct ResultCard: View {
                                 in: RoundedRectangle(cornerRadius: 4, style: .continuous))
                 Text(result.name).font(.system(size: 12, weight: .medium))
                 Text(result.detail)
-                    .font(.system(size: 10))
-                    .foregroundStyle(.secondary)
-                    .padding(.horizontal, 5)
-                    .padding(.vertical, 2)
-                    .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
+                    .font(.system(size: 9))
+                    .foregroundStyle(.tertiary)
                 Spacer()
                 if isWorking { ProgressView().controlSize(.mini) }
             }
