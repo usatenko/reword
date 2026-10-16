@@ -154,10 +154,14 @@ struct OnboardingView: View {
         .padding(20)
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
-        .task { await refreshPermissions() }
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            loginStatus = SMAppService.mainApp.status
-            Task { await refreshPermissions() }
+        // A loop rather than a Timer publisher in body: download progress redraws this view several times a
+        // second, and each redraw would restart such a timer before it ever fires.
+        .task {
+            while !Task.isCancelled {
+                loginStatus = SMAppService.mainApp.status
+                await refreshPermissions()
+                try? await Task.sleep(for: .seconds(1))
+            }
         }
     }
 

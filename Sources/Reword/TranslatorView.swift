@@ -554,13 +554,16 @@ struct SettingsView: View {
         .formStyle(.grouped)
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
-        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            loginStatus = SMAppService.mainApp.status
-            modelLoaded = HyMTEngine.shared.isLoaded
-            Task {
-                guard let status = await PermissionStatus.granted() else { return }
-                axTrusted = status.accessibility
-                screenAccess = status.screenRecording
+        // A loop rather than a Timer publisher in body, which download progress redraws would keep restarting.
+        .task {
+            while !Task.isCancelled {
+                loginStatus = SMAppService.mainApp.status
+                modelLoaded = HyMTEngine.shared.isLoaded
+                if let status = await PermissionStatus.granted() {
+                    axTrusted = status.accessibility
+                    screenAccess = status.screenRecording
+                }
+                try? await Task.sleep(for: .seconds(1))
             }
         }
     }

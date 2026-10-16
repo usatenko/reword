@@ -114,21 +114,27 @@ enum PermissionStatus {
         guard !checking, let executable = Bundle.main.executablePath else { return nil }
         checking = true
         defer { checking = false }
-        return await Task.detached {
+        // Waits through the termination handler: waitUntilExit() needs a run loop and never returns off the main thread.
+        return await withCheckedContinuation { continuation in
             let process = Process()
             process.executableURL = URL(fileURLWithPath: executable)
             process.arguments = ["--permission-status"]
             let pipe = Pipe()
             process.standardOutput = pipe
             process.standardError = FileHandle.nullDevice
-            guard (try? process.run()) != nil else { return nil }
-            let data = pipe.fileHandleForReading.readDataToEndOfFile()
-            process.waitUntilExit()
-            let output = String(decoding: data, as: UTF8.self)
-            guard process.terminationStatus == 0, output.contains("accessibility=") else { return nil }
-            return Snapshot(accessibility: output.contains("accessibility=1"),
-                            screenRecording: output.contains("screenRecording=1"))
-        }.value
+            process.terminationHandler = { process in
+                let output = String(decoding: pipe.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+                guard process.terminationStatus == 0, output.contains("accessibility=") else {
+                    return continuation.resume(returning: nil)
+                }
+                continuation.resume(returning: Snapshot(accessibility: output.contains("accessibility=1"),
+                                                        screenRecording: output.contains("screenRecording=1")))
+            }
+            do { try process.run() } catch { return continuation.resume(returning: nil) }
+            DispatchQueue.global().asyncAfter(deadline: .now() + 3) {     // never let a stuck check block later ones
+                if process.isRunning { process.terminate() }
+            }
+        }
     }
 }
 
