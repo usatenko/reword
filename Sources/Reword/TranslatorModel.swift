@@ -104,12 +104,8 @@ final class TranslatorModel: ObservableObject {
             resolvedTarget = nil
             return
         }
-        let defaults = UserDefaults.standard
-        let first = defaults.string(forKey: Prefs.first) ?? "en"
-        let second = defaults.string(forKey: Prefs.second) ?? "zh-Hans"
-
         let source = sourceChoice == Self.auto ? (LanguageTools.detect(text) ?? "en") : sourceChoice
-        let target = targetChoice == Self.auto ? LanguageTools.target(for: source, first: first, second: second) : targetChoice
+        let target = target(for: source)
         detected = source
         resolvedTarget = target
 
@@ -168,22 +164,37 @@ final class TranslatorModel: ObservableObject {
     func updateDetection() {
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else { detected = nil; resolvedTarget = nil; return }
-        let defaults = UserDefaults.standard
         let source = sourceChoice == Self.auto ? (LanguageTools.detect(text) ?? "en") : sourceChoice
         detected = source
-        resolvedTarget = targetChoice == Self.auto
-            ? LanguageTools.target(for: source, first: defaults.string(forKey: Prefs.first) ?? "en",
-                                   second: defaults.string(forKey: Prefs.second) ?? "zh-Hans")
-            : targetChoice
+        resolvedTarget = target(for: source)
     }
 
-    /// A target picked in the window is remembered: it becomes the secondary language (what text in the primary
-    /// language is translated into), so the next translation, which starts from Auto again, keeps using it.
-    func chooseTarget(_ id: String) {
-        targetChoice = id
+    /// Auto: text in the primary language goes to the secondary one, anything else (including the secondary
+    /// language) to the primary. A target picked in the window wins, unless it's the language of the text itself.
+    private func target(for source: String) -> String {
+        if targetChoice != Self.auto, !LanguageTools.same(targetChoice, source) { return targetChoice }
+        return Self.autoTarget(for: source)
+    }
+
+    private static func autoTarget(for source: String) -> String {
         let defaults = UserDefaults.standard
-        guard id != Self.auto, let first = defaults.string(forKey: Prefs.first), !LanguageTools.same(id, first) else { return }
-        defaults.set(id, forKey: Prefs.second)
+        return LanguageTools.target(for: source, first: defaults.string(forKey: Prefs.first) ?? "en",
+                                    second: defaults.string(forKey: Prefs.second) ?? "zh-Hans")
+    }
+
+    /// Picking a target for text in the primary language (or before there's any text) sets the secondary language,
+    /// so it sticks: the window stays on Auto, and later text in the secondary language still goes to the primary.
+    /// A pick for text in any other language is a one-off for this window; the language pair stays as it was.
+    func chooseTarget(_ id: String) {
+        let defaults = UserDefaults.standard
+        let first = defaults.string(forKey: Prefs.first) ?? "en"
+        let setsSecondary = id != Self.auto && !LanguageTools.same(id, first)
+            && (detected.map { LanguageTools.same($0, first) } ?? true)
+        if setsSecondary { defaults.set(id, forKey: Prefs.second) }
+        lastRequest = nil                // staying on Auto can still change the result: translate again
+        // Stay on Auto when it already gives this language, or when it's the text's own language (nothing to do).
+        let autoCovers = detected.map { LanguageTools.same(Self.autoTarget(for: $0), id) || LanguageTools.same($0, id) } ?? false
+        targetChoice = setsSecondary || autoCovers ? Self.auto : id
     }
 
     func swapLanguages() {
