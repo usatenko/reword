@@ -483,6 +483,9 @@ struct SettingsView: View {
                 }
                 .pickerStyle(.segmented)
                 .fixedSize()
+            }
+
+            Section {
                 Picker("Primary language", selection: $first) {
                     ForEach(AppLanguage.all) { Text("\(LanguageTools.flag($0.id))  \($0.name)").tag($0.id) }
                 }
@@ -491,11 +494,13 @@ struct SettingsView: View {
                     ForEach(AppLanguage.all) { Text("\(LanguageTools.flag($0.id))  \($0.name)").tag($0.id) }
                 }
                 .help("Text in your primary language is translated into this one.")
-                Picker("Other languages to", selection: $otherTarget) {
+                Picker("Other languages into", selection: $otherTarget) {
                     Text("\(LanguageTools.flag(first))  \(LanguageTools.displayName(first))").tag("primary")
                     Text("\(LanguageTools.flag(second))  \(LanguageTools.displayName(second))").tag("secondary")
                 }
-                .help("Where text in any other language is translated. Picking one of your two languages for such text in the translation window changes it too.")
+                .help("Where text in any language other than the two above is translated.")
+            } footer: {
+                languageHint
             }
 
             Section {
@@ -569,6 +574,17 @@ struct SettingsView: View {
                 try? await Task.sleep(for: .seconds(1))
             }
         }
+    }
+
+    /// Explains the three pickers above with the chosen languages filled in.
+    private var languageHint: some View {
+        let primary = LanguageTools.displayName(first)
+        let secondary = LanguageTools.displayName(second)
+        let other = otherTarget == "secondary" ? secondary : primary
+        return Text("\(primary) text is translated into \(secondary), and \(secondary) text into \(primary). Text in any other language (e.g. Russian or German) goes into \(other). Picking a target in the translation window updates these choices.")
+            .font(.caption)
+            .foregroundStyle(.secondary)
+            .fixedSize(horizontal: false, vertical: true)
     }
 
     private func setLaunchAtLogin(_ on: Bool) {

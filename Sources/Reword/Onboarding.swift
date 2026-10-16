@@ -150,6 +150,9 @@ struct OnboardingView: View {
                             Button("Open Settings") { PrivacyPane.screenRecording.open() }.buttonStyle(.link)
                         }
                     }
+                    step(done: true, title: "Languages", detail: languageDetail) {
+                        Button("Change…") { (NSApp.delegate as? AppDelegate)?.openSettings() }.buttonStyle(.link)
+                    }
                     step(done: loginStatus == .enabled, title: "Launch at login",
                          detail: "Optional: keep Reword ready after you restart your Mac.") {
                         Toggle("", isOn: Binding(
@@ -194,6 +197,15 @@ struct OnboardingView: View {
         axTrusted = status.accessibility
         screenAccess = status.screenRecording
         if newlyGranted { OnboardingWindow.bringBack() }
+    }
+
+    /// The pair taken from the Mac's language list, so the user sees what Reword will do before trying it.
+    private var languageDetail: String {
+        let defaults = UserDefaults.standard
+        let primary = LanguageTools.displayName(defaults.string(forKey: Prefs.first) ?? "en")
+        let secondary = LanguageTools.displayName(defaults.string(forKey: Prefs.second) ?? "zh-Hans")
+        let other = defaults.string(forKey: Prefs.otherTarget) == "secondary" ? secondary : primary
+        return "\(primary) ↔ \(secondary); other languages into \(other)."
     }
 
     private var modelDetail: String {
