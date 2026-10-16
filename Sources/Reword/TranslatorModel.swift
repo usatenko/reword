@@ -115,9 +115,10 @@ final class TranslatorModel: ObservableObject {
 
         run += 1
         let run = run
-        // Without the model the popup shows a single download row instead of a failing result card.
+        // Without the model, start downloading it; the popup shows its progress and translates when it's ready.
         guard ModelStore.isInstalled else {
             results = []
+            ModelDownloader.shared.start()
             return
         }
         let engines = Engines.all
