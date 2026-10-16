@@ -1,4 +1,4 @@
-// Renders Resources/AppIcon.icns: a macOS-style rounded square with a purple-blue gradient and a white
+// Renders Resources/AppIcon.icns: a macOS-style rounded square with a red gradient and a white
 // "character.bubble" symbol. Run: swift scripts/make_icon.swift
 import AppKit
 
@@ -25,8 +25,8 @@ func render(_ size: Int) -> Data {
 
     NSGraphicsContext.saveGraphicsState()
     path.addClip()
-    NSGradient(colors: [NSColor(srgbRed: 0.56, green: 0.33, blue: 0.98, alpha: 1),
-                        NSColor(srgbRed: 0.22, green: 0.47, blue: 1.00, alpha: 1)])!
+    NSGradient(colors: [NSColor(srgbRed: 1.00, green: 0.42, blue: 0.36, alpha: 1),
+                        NSColor(srgbRed: 0.84, green: 0.11, blue: 0.20, alpha: 1)])!
         .draw(in: body, angle: -60)
     // Soft top highlight.
     NSGradient(colors: [NSColor.white.withAlphaComponent(0.18), NSColor.white.withAlphaComponent(0)])!
