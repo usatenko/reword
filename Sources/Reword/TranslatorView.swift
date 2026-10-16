@@ -214,7 +214,7 @@ struct TranslatorView: View {
             .foregroundStyle(.secondary)
             .disabled(model.detected == nil)
             .help("Swap languages")
-            LanguageMenu(selection: $model.targetChoice,
+            LanguageMenu(selection: Binding(get: { model.targetChoice }, set: model.chooseTarget),
                          autoTitle: LanguageTools.displayName(model.displayTarget),
                          autoFlag: LanguageTools.flag(model.displayTarget))
                 .frame(maxWidth: .infinity)

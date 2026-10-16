@@ -177,6 +177,15 @@ final class TranslatorModel: ObservableObject {
             : targetChoice
     }
 
+    /// A target picked in the window is remembered: it becomes the secondary language (what text in the primary
+    /// language is translated into), so the next translation, which starts from Auto again, keeps using it.
+    func chooseTarget(_ id: String) {
+        targetChoice = id
+        let defaults = UserDefaults.standard
+        guard id != Self.auto, let first = defaults.string(forKey: Prefs.first), !LanguageTools.same(id, first) else { return }
+        defaults.set(id, forKey: Prefs.second)
+    }
+
     func swapLanguages() {
         guard let detected, let resolvedTarget else { return }
         sourceChoice = resolvedTarget
