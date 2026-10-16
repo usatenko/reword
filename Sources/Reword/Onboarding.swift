@@ -148,9 +148,7 @@ struct OnboardingView: View {
                             Button("Open Settings") { PrivacyPane.screenRecording.open() }.buttonStyle(.link)
                         }
                     }
-                    step(done: true, title: "Languages", detail: languageDetail) {
-                        Button("Change…") { (NSApp.delegate as? AppDelegate)?.openSettings() }.buttonStyle(.link)
-                    }
+                    step(done: true, title: "Languages", detail: languageDetail) { EmptyView() }
                 }
                 .padding(4)
             }
@@ -184,13 +182,12 @@ struct OnboardingView: View {
         if newlyGranted { OnboardingWindow.bringBack() }
     }
 
-    /// The pair taken from the Mac's language list, so the user sees what Reword will do before trying it.
+    /// What Reword will do before the user tries it: the languages come from the Mac's language list.
     private var languageDetail: String {
-        let defaults = UserDefaults.standard
-        let primary = LanguageTools.displayName(defaults.string(forKey: Prefs.first) ?? "en")
-        let secondary = LanguageTools.displayName(defaults.string(forKey: Prefs.second) ?? "zh-Hans")
-        let other = defaults.string(forKey: Prefs.otherTarget) == "secondary" ? secondary : primary
-        return "\(primary) ↔ \(secondary); other languages into \(other)."
+        let recents = Prefs.recents
+        let latest = LanguageTools.displayName(recents[0])
+        let next = LanguageTools.displayName(recents.count > 1 ? recents[1] : recents[0])
+        return "Into \(latest), or into \(next) when the text is \(latest). Pick another language in the window and it's remembered."
     }
 
     private var modelDetail: String {

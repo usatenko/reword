@@ -2,34 +2,50 @@ import Foundation
 import SwiftUI
 
 enum Prefs {
-    static let first = "firstLanguage"
-    static let second = "secondLanguage"
-    /// Where text in a language other than the two goes: "primary" or "secondary".
-    static let otherTarget = "otherLanguagesTarget"
+    /// Target languages the user has picked, most recent first — the way Google Translate remembers languages.
+    static let recentTargets = "recentTargets"
     static let idleUnloadSeconds = "idleUnloadSeconds"
+    private static let maxRecent = 5
 
-    /// The pair defaults to the first two languages in the Mac's language list that Reword supports.
     static func registerDefaults() {
-        var ids: [String] = []
-        for id in Locale.preferredLanguages.compactMap(LanguageTools.appLanguageID) where !ids.contains(id) { ids.append(id) }
-        let first = ids.first ?? "en"
-        UserDefaults.standard.register(defaults: [
-            Prefs.first: first,
-            Prefs.second: ids.dropFirst().first ?? (first == "en" ? "zh-Hans" : "en"),
-            Prefs.otherTarget: "primary",
-            Prefs.idleUnloadSeconds: 300,
-        ])
+        UserDefaults.standard.register(defaults: [Prefs.idleUnloadSeconds: 300])
+        migrateLanguagePair()
     }
 
-    /// Auto target: primary-language text goes to the secondary language, secondary-language text to the primary
-    /// one, and anything else to whichever of the two was last picked for such text (the primary at first).
+    /// Never empty. Until the user picks anything it's the Mac's language list with the first two swapped, so text
+    /// in the Mac's main language goes into the second one and back (English + Ukrainian → Ukrainian, English).
+    static var recents: [String] {
+        if let saved = UserDefaults.standard.stringArray(forKey: recentTargets), !saved.isEmpty { return saved }
+        var ids: [String] = []
+        for id in Locale.preferredLanguages.compactMap(LanguageTools.appLanguageID) where !ids.contains(id) { ids.append(id) }
+        if ids.isEmpty { ids = ["en"] }
+        if ids.count == 1 { ids.append(ids[0] == "en" ? "zh-Hans" : "en") }
+        ids.swapAt(0, 1)
+        return ids
+    }
+
+    /// Auto target: the most recent language that isn't the text's own.
     static func autoTarget(for source: String) -> String {
+        let list = recents
+        return list.first { !LanguageTools.same($0, source) } ?? list[0]
+    }
+
+    /// A target the user picked moves to the front, so Auto uses it from now on.
+    static func noteTarget(_ id: String) {
+        var list = recents.filter { !LanguageTools.same($0, id) }
+        list.insert(id, at: 0)
+        UserDefaults.standard.set(Array(list.prefix(maxRecent)), forKey: recentTargets)
+    }
+
+    /// Versions up to 0.1.10 kept a primary/secondary pair; it becomes the two most recent targets.
+    private static func migrateLanguagePair() {
         let defaults = UserDefaults.standard
-        let first = defaults.string(forKey: Prefs.first) ?? "en"
-        let second = defaults.string(forKey: Prefs.second) ?? "zh-Hans"
-        if LanguageTools.same(source, first) { return second }
-        if LanguageTools.same(source, second) { return first }
-        return defaults.string(forKey: Prefs.otherTarget) == "secondary" ? second : first
+        let pair = ["secondLanguage", "firstLanguage"].compactMap { defaults.string(forKey: $0) }
+        guard defaults.stringArray(forKey: recentTargets) == nil, !pair.isEmpty else { return }
+        var list = pair
+        for id in recents where !list.contains(id) { list.append(id) }
+        defaults.set(Array(list.prefix(maxRecent)), forKey: recentTargets)
+        for key in ["firstLanguage", "secondLanguage", "otherLanguagesTarget"] { defaults.removeObject(forKey: key) }
     }
 }
 
@@ -170,7 +186,7 @@ final class TranslatorModel: ObservableObject {
 
     /// Target shown in the language bar: the resolved one, or the default (second language) before any text.
     var displayTarget: String {
-        resolvedTarget ?? UserDefaults.standard.string(forKey: Prefs.second) ?? "en"
+        resolvedTarget ?? Prefs.recents[0]
     }
 
     /// Live detection while typing, so the language bar shows real languages before translating.
@@ -190,29 +206,17 @@ final class TranslatorModel: ObservableObject {
     }
 
 
-    /// A pick in the window is remembered where it fits the language pair, and the window stays on Auto:
-    /// - for text in the primary language (or before there's text), it becomes the secondary language;
-    /// - for text in a third language, picking the primary or secondary one sends all such text there from now on.
-    /// Anything else (e.g. French for German text) is a one-off for this window and leaves the pair as it is.
+    /// A pick is remembered as the most recent target, and the window stays on Auto, which now resolves to it
+    /// (or, when it's the text's own language, to the next recent one).
     func chooseTarget(_ id: String) {
         lastRequest = nil                // staying on Auto can still change the result: translate again
-        let defaults = UserDefaults.standard
-        let first = defaults.string(forKey: Prefs.first) ?? "en"
-        let second = defaults.string(forKey: Prefs.second) ?? "zh-Hans"
-        guard id != Self.auto else { targetChoice = Self.auto; return }
-        if detected.map({ LanguageTools.same($0, first) }) ?? true {
-            if !LanguageTools.same(id, first) { defaults.set(id, forKey: Prefs.second) }
-        } else if let source = detected, !LanguageTools.same(source, second) {
-            if LanguageTools.same(id, first) { defaults.set("primary", forKey: Prefs.otherTarget) }
-            if LanguageTools.same(id, second) { defaults.set("secondary", forKey: Prefs.otherTarget) }
-        }
-        // Stay on Auto when it now gives this language, or when it's the text's own language (nothing to do).
-        let autoCovers = detected.map { LanguageTools.same(Prefs.autoTarget(for: $0), id) || LanguageTools.same($0, id) } ?? true
-        targetChoice = autoCovers ? Self.auto : id
+        if id != Self.auto { Prefs.noteTarget(id) }
+        targetChoice = Self.auto
     }
 
     func swapLanguages() {
         guard let detected, let resolvedTarget else { return }
+        Prefs.noteTarget(detected)       // a language you translate into is one you use
         sourceChoice = resolvedTarget
         targetChoice = detected          // choicesChanged() translates once
     }

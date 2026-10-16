@@ -332,6 +332,10 @@ private struct LanguageMenu: View {
         Menu {
             Button("Auto") { selection = TranslatorModel.auto }
             Divider()
+            ForEach(Prefs.recents, id: \.self) { id in              // the languages you use, at the top
+                Button("\(LanguageTools.flag(id))  \(LanguageTools.displayName(id))") { selection = id }
+            }
+            Divider()
             ForEach(AppLanguage.all) { lang in
                 Button("\(LanguageTools.flag(lang.id))  \(lang.name)") { selection = lang.id }
             }
@@ -452,9 +456,7 @@ struct ModelDownloadView: View {
 // MARK: - Settings
 
 struct SettingsView: View {
-    @AppStorage(Prefs.first) private var first = "en"
-    @AppStorage(Prefs.second) private var second = "zh-Hans"
-    @AppStorage(Prefs.otherTarget) private var otherTarget = "primary"
+    @State private var recents = Prefs.recents
     @AppStorage(Prefs.idleUnloadSeconds) private var idleUnload = 300
     @AppStorage(ModelStore.quantKey) private var quant = ModelQuant.q4.rawValue
     @AppStorage(MenuBarIcon.key) private var menuIcon = MenuBarIcon.fallback
@@ -486,19 +488,10 @@ struct SettingsView: View {
             }
 
             Section {
-                Picker("Primary language", selection: $first) {
-                    ForEach(AppLanguage.all) { Text("\(LanguageTools.flag($0.id))  \($0.name)").tag($0.id) }
+                LabeledContent("Recent languages") {
+                    Text(recents.map { "\(LanguageTools.flag($0)) \(LanguageTools.displayName($0))" }.joined(separator: "   "))
+                        .foregroundStyle(.secondary)
                 }
-                .help("Text in your secondary language is translated into this one.")
-                Picker("Secondary language", selection: $second) {
-                    ForEach(AppLanguage.all) { Text("\(LanguageTools.flag($0.id))  \($0.name)").tag($0.id) }
-                }
-                .help("Text in your primary language is translated into this one.")
-                Picker("Other languages into", selection: $otherTarget) {
-                    Text("\(LanguageTools.flag(first))  \(LanguageTools.displayName(first))").tag("primary")
-                    Text("\(LanguageTools.flag(second))  \(LanguageTools.displayName(second))").tag("secondary")
-                }
-                .help("Where text in any language other than the two above is translated.")
             } footer: {
                 languageHint
             }
@@ -567,6 +560,7 @@ struct SettingsView: View {
             while !Task.isCancelled {
                 loginStatus = SMAppService.mainApp.status
                 modelLoaded = HyMTEngine.shared.isLoaded
+                recents = Prefs.recents
                 if let status = await PermissionStatus.granted() {
                     axTrusted = status.accessibility
                     screenAccess = status.screenRecording
@@ -578,10 +572,9 @@ struct SettingsView: View {
 
     /// Explains the three pickers above with the chosen languages filled in.
     private var languageHint: some View {
-        let primary = LanguageTools.displayName(first)
-        let secondary = LanguageTools.displayName(second)
-        let other = otherTarget == "secondary" ? secondary : primary
-        return Text("\(primary) text is translated into \(secondary), and \(secondary) text into \(primary). Text in any other language (e.g. Russian or German) goes into \(other). Picking a target in the translation window updates these choices.")
+        let latest = LanguageTools.displayName(recents[0])
+        let next = recents.count > 1 ? LanguageTools.displayName(recents[1]) : latest
+        return Text("Text is translated into \(latest), or into \(next) when it's already \(latest). Pick a language in the translation window to make it the most recent.")
             .font(.caption)
             .foregroundStyle(.secondary)
             .fixedSize(horizontal: false, vertical: true)
