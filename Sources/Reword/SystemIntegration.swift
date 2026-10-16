@@ -53,16 +53,35 @@ enum PrivacyPane {
     case accessibility, screenRecording
 
     /// Asks for the permission and makes sure something visible happens, without stacking prompts. The request
-    /// adds Reword to the list and may show macOS's own dialog (which takes focus). If no dialog appeared —
-    /// macOS often skips it — Reword is still frontmost, so it opens the System Settings page instead.
+    /// adds Reword to the list and may show macOS's own dialog. That dialog belongs to a system process, can take
+    /// a second or two to appear and doesn't take activation from Reword, so watch for its window: if none shows
+    /// up, macOS skipped it (it often does, e.g. after a reset) and the System Settings page opens instead.
     @MainActor func request() {
+        let before = Self.otherAppPanels()
         switch self {
         case .accessibility: SelectionReader.promptForAccessibility()
         case .screenRecording: CGRequestScreenCaptureAccess()
         }
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) {
-            if NSApp.isActive { self.open() }
+        Task { @MainActor in
+            for _ in 0..<10 {
+                try? await Task.sleep(for: .milliseconds(250))
+                if !Self.otherAppPanels().subtracting(before).isEmpty { return }   // macOS's dialog is up
+            }
+            self.open()
         }
+    }
+
+    /// On-screen windows above the normal level that belong to other processes, such as macOS's permission
+    /// dialogs. Window numbers and levels are readable without Screen Recording.
+    private static func otherAppPanels() -> Set<Int> {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return [] }
+        return Set(windows.compactMap { window in
+            guard (window[kCGWindowOwnerPID as String] as? Int32) != ownPID,
+                  let layer = window[kCGWindowLayer as String] as? Int, layer > 0, layer < 1000 else { return nil }
+            return window[kCGWindowNumber as String] as? Int
+        })
     }
 
     @MainActor func open() {
@@ -70,6 +89,46 @@ enum PrivacyPane {
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {
             NSWorkspace.shared.open(url)
         }
+    }
+}
+
+/// What macOS currently allows Reword, as opposed to what this running process can use. A running app keeps
+/// a cached answer (Screen Recording never applies before a restart), so the granted state is read by a short-lived
+/// copy of Reword (`--permission-status`), which macOS answers fresh.
+enum PermissionStatus {
+    struct Snapshot: Equatable { var accessibility: Bool; var screenRecording: Bool }
+
+    /// Whether this process started with Screen Recording, i.e. screenshots work without a restart.
+    static let screenRecordingAtLaunch = CGPreflightScreenCaptureAccess()
+
+    /// The `--permission-status` output for this process.
+    static var commandLineOutput: String {
+        "accessibility=\(AXIsProcessTrusted() ? 1 : 0) screenRecording=\(CGPreflightScreenCaptureAccess() ? 1 : 0)"
+    }
+
+    @MainActor private static var checking = false
+
+    /// Runs off the main thread; nil if the helper couldn't run or a check is already running (it takes ~1 s, so
+    /// once-a-second polling would otherwise pile up).
+    @MainActor static func granted() async -> Snapshot? {
+        guard !checking, let executable = Bundle.main.executablePath else { return nil }
+        checking = true
+        defer { checking = false }
+        return await Task.detached {
+            let process = Process()
+            process.executableURL = URL(fileURLWithPath: executable)
+            process.arguments = ["--permission-status"]
+            let pipe = Pipe()
+            process.standardOutput = pipe
+            process.standardError = FileHandle.nullDevice
+            guard (try? process.run()) != nil else { return nil }
+            let data = pipe.fileHandleForReading.readDataToEndOfFile()
+            process.waitUntilExit()
+            let output = String(decoding: data, as: UTF8.self)
+            guard process.terminationStatus == 0, output.contains("accessibility=") else { return nil }
+            return Snapshot(accessibility: output.contains("accessibility=1"),
+                            screenRecording: output.contains("screenRecording=1"))
+        }.value
     }
 }
 

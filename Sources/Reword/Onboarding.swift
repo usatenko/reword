@@ -59,7 +59,6 @@ struct OnboardingView: View {
     @ObservedObject private var downloader = ModelDownloader.shared
     @State private var axTrusted = SelectionReader.isTrusted
     @State private var screenAccess = ScreenOCR.hasScreenAccess
-    @State private var screenAccessAtLaunch = ScreenOCR.hasScreenAccess
     @State private var loginStatus = SMAppService.mainApp.status
 
     var body: some View {
@@ -117,13 +116,13 @@ struct OnboardingView: View {
                             Button("Allow…") { PrivacyPane.accessibility.request() }
                         }
                     }
-                    step(done: screenAccess && screenAccessAtLaunch, title: "Allow Screen Recording",
-                         detail: screenAccess && !screenAccessAtLaunch
+                    step(done: screenAccess && PermissionStatus.screenRecordingAtLaunch, title: "Allow Screen Recording",
+                         detail: screenAccess && !PermissionStatus.screenRecordingAtLaunch
                             ? "Allowed. Restart Reword (or use Quit & Reopen in the macOS dialog) so it takes effect."
                             : "Lets Reword read text from screenshots (\(display(.screenshotTranslate))).") {
                         if !screenAccess {
                             Button("Allow…") { PrivacyPane.screenRecording.request() }
-                        } else if !screenAccessAtLaunch {
+                        } else if !PermissionStatus.screenRecordingAtLaunch {
                             Button("Restart Reword", action: Self.relaunch)
                         } else {
                             Button("Open Settings") { PrivacyPane.screenRecording.open() }.buttonStyle(.link)
@@ -155,13 +154,20 @@ struct OnboardingView: View {
         .padding(20)
         .frame(width: 520)
         .fixedSize(horizontal: false, vertical: true)
+        .task { await refreshPermissions() }
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            let granted = (!axTrusted && SelectionReader.isTrusted) || (!screenAccess && ScreenOCR.hasScreenAccess)
-            axTrusted = SelectionReader.isTrusted
-            screenAccess = ScreenOCR.hasScreenAccess
             loginStatus = SMAppService.mainApp.status
-            if granted { OnboardingWindow.bringBack() }
+            Task { await refreshPermissions() }
         }
+    }
+
+    /// Reads what macOS allows now; when a permission was just granted in System Settings, the window comes back.
+    private func refreshPermissions() async {
+        guard let status = await PermissionStatus.granted() else { return }
+        let newlyGranted = (!axTrusted && status.accessibility) || (!screenAccess && status.screenRecording)
+        axTrusted = status.accessibility
+        screenAccess = status.screenRecording
+        if newlyGranted { OnboardingWindow.bringBack() }
     }
 
     private var modelDetail: String {
@@ -207,14 +213,18 @@ struct OnboardingView: View {
         }
     }
 
-    /// Screen Recording only takes effect in a new process. Reopen after this one has fully exited, so the new
-    /// instance can register the global shortcuts.
+    /// Screen Recording only takes effect in a new process. The new copy is launched by macOS before this one quits
+    /// (a helper process of ours would be killed along with the app) and waits for this one to exit, so it can
+    /// register the global shortcuts.
     private static func relaunch() {
-        let task = Process()
-        task.executableURL = URL(fileURLWithPath: "/bin/sh")
-        task.arguments = ["-c", "while kill -0 \"$0\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$1\"",
-                          String(ProcessInfo.processInfo.processIdentifier), Bundle.main.bundlePath]
-        try? task.run()
-        NSApp.terminate(nil)
+        let configuration = NSWorkspace.OpenConfiguration()
+        configuration.createsNewApplicationInstance = true
+        configuration.arguments = [Relaunch.waitFlag, String(ProcessInfo.processInfo.processIdentifier)]
+        NSWorkspace.shared.openApplication(at: Bundle.main.bundleURL, configuration: configuration) { _, error in
+            guard error == nil else { return }
+            // Not from a main-queue job: quitting waits on work that needs the main queue (see applicationShouldTerminate).
+            RunLoop.main.perform { MainActor.assumeIsolated { NSApp.terminate(nil) } }
+            CFRunLoopWakeUp(CFRunLoopGetMain())
+        }
     }
 }

@@ -63,7 +63,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         model.cancelAll()                            // stop generating so the engine can be freed right away
         // Free the model off the main thread and reply through the run loop: if terminate() was called from a
         // main-queue job, the main queue stays blocked until it returns, so a MainActor reply would deadlock.
+        let waitForDownloadSave = ModelDownloader.shared.saveForQuit()
         Task.detached {
+            waitForDownloadSave()
             await HyMTEngine.shared.shutdown()
             RunLoop.main.perform(inModes: [.common, .modalPanel]) {
                 MainActor.assumeIsolated { NSApp.reply(toApplicationShouldTerminate: true) }

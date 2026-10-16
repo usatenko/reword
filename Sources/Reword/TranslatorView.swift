@@ -555,10 +555,13 @@ struct SettingsView: View {
         .frame(width: 460)
         .fixedSize(horizontal: false, vertical: true)
         .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
-            axTrusted = SelectionReader.isTrusted
-            screenAccess = ScreenOCR.hasScreenAccess
             loginStatus = SMAppService.mainApp.status
             modelLoaded = HyMTEngine.shared.isLoaded
+            Task {
+                guard let status = await PermissionStatus.granted() else { return }
+                axTrusted = status.accessibility
+                screenAccess = status.screenRecording
+            }
         }
     }
 

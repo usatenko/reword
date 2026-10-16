@@ -53,9 +53,40 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
         guard task == nil, !verifying, !ModelStore.isInstalled else { return }
         error = nil
         progress = 0
-        downloadingQuant = ModelStore.quant
-        task = session.downloadTask(with: ModelStore.remoteURL)
+        let quant = ModelStore.quant
+        downloadingQuant = quant
+        // Continue a download that was interrupted by quitting (e.g. "Restart Reword" for Screen Recording).
+        let resumeURL = Self.resumeURL(for: quant)
+        if let data = try? Data(contentsOf: resumeURL) {
+            try? FileManager.default.removeItem(at: resumeURL)
+            resuming = true
+            task = session.downloadTask(withResumeData: data)
+        } else {
+            resuming = false
+            task = session.downloadTask(with: ModelStore.remoteURL)
+        }
         task?.resume()
+    }
+
+    /// Whether the current task continues an earlier download; if that fails, it starts over once by itself.
+    private var resuming = false
+
+    private static func resumeURL(for quant: ModelQuant) -> URL {
+        ModelStore.url(for: quant).appendingPathExtension("resume")
+    }
+
+    /// Called when Reword quits: keeps what was downloaded so far, so the next launch continues from there. The
+    /// returned wait doesn't need the main thread (it may be blocked while quitting) and gives up after 2 s.
+    func saveForQuit() -> @Sendable () -> Void {
+        guard let task, let quant = downloadingQuant else { return {} }
+        self.task = nil
+        let url = Self.resumeURL(for: quant)
+        let saved = DispatchSemaphore(value: 0)
+        task.cancel(byProducingResumeData: { data in
+            if let data { try? data.write(to: url, options: .atomic) }
+            saved.signal()
+        })
+        return { _ = saved.wait(timeout: .now() + 2) }
     }
 
     func cancel() {
@@ -129,7 +160,13 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
             guard task === self.task else { return }              // a cancelled earlier download finishing late
             self.task = nil
             self.progress = nil
-            if let error, (error as? URLError)?.code != .cancelled { self.error = error.localizedDescription }
+            guard let error, (error as? URLError)?.code != .cancelled else { return }
+            if self.resuming {                                    // the saved partial download is unusable
+                self.resuming = false
+                self.start()
+                return
+            }
+            self.error = error.localizedDescription
         }
     }
 }

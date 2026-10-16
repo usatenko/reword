@@ -27,6 +27,12 @@ func runCommandLine(_ args: [String]) async -> Int32 {
     return failures == 0 ? 0 : 1
 }
 
+/// `Reword --permission-status` prints what macOS allows Reword right now (the running app may have a stale answer).
+if CommandLine.arguments.contains("--permission-status") {
+    print(PermissionStatus.commandLineOutput)
+    exit(0)
+}
+
 /// `Reword --ocr image.png` prints the text Vision recognizes (for testing screenshot translation).
 if let i = CommandLine.arguments.firstIndex(of: "--ocr"), CommandLine.arguments.indices.contains(i + 1) {
     let url = URL(fileURLWithPath: CommandLine.arguments[i + 1])
@@ -43,6 +49,19 @@ if CommandLine.arguments.contains("--translate") {
     }
     dispatchMain()
 }
+
+/// Launched by "Restart Reword": wait for the previous copy to quit first.
+enum Relaunch {
+    static let waitFlag = "--after-pid"
+
+    static func waitForPreviousInstance() {
+        guard let i = CommandLine.arguments.firstIndex(of: waitFlag), CommandLine.arguments.indices.contains(i + 1),
+              let pid = pid_t(CommandLine.arguments[i + 1]) else { return }
+        for _ in 0..<150 where kill(pid, 0) == 0 { usleep(100_000) }      // up to 15 s
+    }
+}
+
+Relaunch.waitForPreviousInstance()
 
 MainActor.assumeIsolated {
     let app = NSApplication.shared
