@@ -501,15 +501,9 @@ struct SettingsView: View {
                 }
                 LabeledContent("Permissions") {
                     HStack(spacing: 8) {
-                        PermissionBadge(granted: axTrusted, title: "Accessibility") {
-                            SelectionReader.promptForAccessibility()
-                            PrivacyPane.accessibility.open()
-                        }
+                        PermissionBadge(granted: axTrusted, title: "Accessibility", pane: .accessibility)
                         .help("Needed to read the selected text (\(Shortcut.current(.selectionTranslate)?.display ?? "Translate selected text")).")
-                        PermissionBadge(granted: screenAccess, title: "Screen Recording") {
-                            CGRequestScreenCaptureAccess()
-                            PrivacyPane.screenRecording.open()
-                        }
+                        PermissionBadge(granted: screenAccess, title: "Screen Recording", pane: .screenRecording)
                         .help("Needed for screenshot OCR. After enabling it, quit and reopen Reword.")
                     }
                 }
@@ -579,20 +573,21 @@ struct SettingsView: View {
     }
 }
 
+/// Green when granted (click to manage it in System Settings), orange with a request when missing.
 private struct PermissionBadge: View {
     let granted: Bool
     let title: String
-    let request: () -> Void
+    let pane: PrivacyPane
 
     var body: some View {
-        Button(action: request) {
+        Button { granted ? pane.open() : pane.request() } label: {
             HStack(spacing: 4) {
                 Image(systemName: granted ? "checkmark.circle.fill" : "exclamationmark.circle.fill")
                     .foregroundStyle(granted ? .green : .orange)
-                Text(title)
+                Text(title).foregroundStyle(granted ? Color.secondary : Color.primary)
             }
         }
         .buttonStyle(.borderless)
-        .disabled(granted)
+        .help(granted ? "Allowed. Click to manage it in System Settings." : "Click to allow \(title).")
     }
 }

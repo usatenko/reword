@@ -52,6 +52,21 @@ final class HotKeyCenter {
 enum PrivacyPane {
     case accessibility, screenRecording
 
+    /// Asks for the permission without stacking prompts: the first time, only macOS's own dialog (it also adds
+    /// Reword to the list and has an "Open System Settings" button); after that, the System Settings page.
+    @MainActor func request() {
+        let key = "permissionRequested.\(self)"
+        let firstTime = !UserDefaults.standard.bool(forKey: key)
+        UserDefaults.standard.set(true, forKey: key)
+        switch self {
+        case .accessibility:
+            if firstTime { SelectionReader.promptForAccessibility() } else { open() }
+        case .screenRecording:
+            CGRequestScreenCaptureAccess()          // a dialog only the first time; afterwards it just keeps Reword listed
+            if !firstTime { open() }
+        }
+    }
+
     @MainActor func open() {
         let anchor = self == .accessibility ? "Privacy_Accessibility" : "Privacy_ScreenCapture"
         if let url = URL(string: "x-apple.systempreferences:com.apple.preference.security?\(anchor)") {

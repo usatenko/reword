@@ -14,7 +14,7 @@ enum ScreenOCR {
             switch self {
             case .cancelled: return "Screenshot cancelled."
             case .noText: return "No text found in the screenshot."
-            case .permission: return "Reword needs Screen Recording access: enable it in the System Settings pane that just opened, then quit and reopen Reword."
+            case .permission: return "Reword needs Screen Recording access to read screenshots. Allow it in System Settings, then reopen Reword."
             case let .capture(message): return "Couldn't capture the screen: \(message)"
             }
         }
@@ -28,8 +28,7 @@ enum ScreenOCR {
     /// focus (otherwise macOS hands focus to the previous app when the overlay closes).
     static func captureAndRecognize(onSelected: () -> Void = {}, onCaptured: () -> Void = {}) async throws -> String {
         if !hasScreenAccess {
-            CGRequestScreenCaptureAccess()
-            PrivacyPane.screenRecording.open()
+            PrivacyPane.screenRecording.request()
             throw Failure.permission
         }
         guard let region = await RegionSelector.select() else { throw Failure.cancelled }

@@ -100,24 +100,22 @@ struct OnboardingView: View {
                     }
                     step(done: axTrusted, title: "Allow Accessibility",
                          detail: "Lets Reword read the text you select (\(display(.selectionTranslate))).") {
-                        if !axTrusted {
-                            Button("Open Settings") {
-                                SelectionReader.promptForAccessibility()
-                                PrivacyPane.accessibility.open()
-                            }
+                        if axTrusted {
+                            Button("Open Settings") { PrivacyPane.accessibility.open() }.buttonStyle(.link)
+                        } else {
+                            Button("Allow…") { PrivacyPane.accessibility.request() }
                         }
                     }
                     step(done: screenAccess && screenAccessAtLaunch, title: "Allow Screen Recording",
                          detail: screenAccess && !screenAccessAtLaunch
-                            ? "Allowed. Restart Reword so it takes effect."
+                            ? "Allowed. Restart Reword (or use Quit & Reopen in the macOS dialog) so it takes effect."
                             : "Lets Reword read text from screenshots (\(display(.screenshotTranslate))).") {
                         if !screenAccess {
-                            Button("Open Settings") {
-                                CGRequestScreenCaptureAccess()
-                                PrivacyPane.screenRecording.open()
-                            }
+                            Button("Allow…") { PrivacyPane.screenRecording.request() }
                         } else if !screenAccessAtLaunch {
                             Button("Restart Reword", action: Self.relaunch)
+                        } else {
+                            Button("Open Settings") { PrivacyPane.screenRecording.open() }.buttonStyle(.link)
                         }
                     }
                     step(done: loginStatus == .enabled, title: "Launch at login",

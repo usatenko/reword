@@ -154,7 +154,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
                 model.notice = "No text selected. Select text in any app, then press \(shortcut)."
             } else {
                 model.notice = "Reword needs Accessibility access to read selected text. Allow it in System Settings, then press \(shortcut) again."
-                SelectionReader.promptForAccessibility()
+                PrivacyPane.accessibility.request()
             }
         } else {
             model.load(text)
