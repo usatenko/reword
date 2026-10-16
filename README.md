@@ -8,6 +8,10 @@ translation in a small window, without your words ever leaving the computer.
 - **Offline and private.** No accounts, no API keys, no cloud services. After a one-time model download,
   Reword works without an internet connection.
 
+<p align="center">
+  <img src="docs/screenshots/window.png" alt="The Reword window translating an English question into Ukrainian" width="420">
+</p>
+
 ## How it works
 
 | Shortcut | What it does |
@@ -25,6 +29,11 @@ Shortcuts can be changed in Settings.
 - **Stays out of the way.** It lives in the menu bar. The window hides when you switch apps, or you can pin
   it next to your work. It remembers its size and position.
 - **Small touches:** read aloud, copy, launch at login, and the model unloads from memory when idle.
+
+<p align="center">
+  <img src="docs/screenshots/settings.png" alt="Reword settings: launch at login, menu bar icon, languages, shortcuts, permissions and model" width="440">
+  <img src="docs/screenshots/about.png" alt="About Reword window" width="390">
+</p>
 
 ## Languages
 

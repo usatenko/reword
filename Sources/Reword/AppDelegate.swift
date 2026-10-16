@@ -14,9 +14,9 @@ final class TranslatorPanel: NSPanel {
 @MainActor
 final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMenuDelegate {
     private var statusItem: NSStatusItem!
-    private let model = TranslatorModel()
-    private lazy var panel = makePanel()
-    private var settingsWindow: NSWindow?
+    let model = TranslatorModel()
+    lazy var panel = makePanel()
+    var settingsWindow: NSWindow?
     private var menuItems: [ShortcutAction: NSMenuItem] = [:]
 
     func applicationDidFinishLaunching(_ notification: Notification) {
@@ -31,13 +31,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         Hotkeys.apply()
 
         if CommandLine.arguments.contains("--show") { showInputTranslation() }   // used by scripted UI tests
+        #if DEBUG
+        if let i = CommandLine.arguments.firstIndex(of: "--readme-shots"), CommandLine.arguments.indices.contains(i + 1) {
+            let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
+            Task { await self.captureReadmeShots(to: dir) }
+        }
+        #endif
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
         model.cancelAll()                            // stop generating so the engine can be freed right away
-        Task {
+        // Free the model off the main thread and reply through the run loop: if terminate() was called from a
+        // main-queue job, the main queue stays blocked until it returns, so a MainActor reply would deadlock.
+        Task.detached {
             await HyMTEngine.shared.shutdown()
-            sender.reply(toApplicationShouldTerminate: true)
+            RunLoop.main.perform(inModes: [.common, .modalPanel]) {
+                MainActor.assumeIsolated { NSApp.reply(toApplicationShouldTerminate: true) }
+            }
+            CFRunLoopWakeUp(CFRunLoopGetMain())
         }
         return .terminateLater
     }
@@ -127,7 +138,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         }
     }
 
-    private func showPanel() {
+    func showPanel() {
         // The panel reopens where the user left it (frame autosave); first launch centers it.
         if !panel.isVisible, UserDefaults.standard.string(forKey: "NSWindow Frame TranslatorPanel") == nil {
             panel.center()
@@ -203,7 +214,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         if model.pinned { panel.level = .normal } else { panel.orderOut(nil) }
     }
 
-    @objc private func openSettings() {
+    @objc func openSettings() {
         if settingsWindow == nil {
             let host = NSHostingController(rootView: SettingsView())
             host.sizingOptions = [.preferredContentSize]
@@ -221,3 +232,62 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         settingsWindow?.orderFrontRegardless()      // accessory apps aren't always allowed to activate
     }
 }
+
+#if DEBUG
+import ScreenCaptureKit
+
+/// Debug-only: renders the windows shown in the README (`Reword --readme-shots <dir>`), then quits.
+extension AppDelegate {
+    func captureReadmeShots(to dir: URL) async {
+        try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        let wasPinned = model.pinned
+        model.pinned = true
+        defer { model.pinned = wasPinned }
+
+        model.clear()
+        showPanel()
+        panel.setContentSize(NSSize(width: 420, height: 440))
+        panel.center()
+        model.load("What is the internal rate of return, and how do you use it to decide whether a project is worth the investment?")
+        for _ in 0..<120 {                                          // wait up to 60 s for the translation
+            if case .done = model.results.first?.state { break }
+            try? await Task.sleep(for: .milliseconds(500))
+        }
+        try? await Task.sleep(for: .milliseconds(600))
+        await snapshot(panel, to: dir.appendingPathComponent("window.png"))
+
+        openSettings()
+        try? await Task.sleep(for: .seconds(1))
+        if let settingsWindow { await snapshot(settingsWindow, to: dir.appendingPathComponent("settings.png")) }
+        settingsWindow?.close()
+
+        AboutWindow.show(delegate: self)
+        try? await Task.sleep(for: .seconds(1))
+        if let about = AboutWindow.current { await snapshot(about, to: dir.appendingPathComponent("about.png")) }
+        AboutWindow.current?.close()
+        NSApp.terminate(nil)
+    }
+
+    private func snapshot(_ window: NSWindow, to url: URL) async {
+        do {
+            let content = try await SCShareableContent.current
+            guard let scWindow = content.windows.first(where: { $0.windowID == CGWindowID(window.windowNumber) }) else {
+                FileHandle.standardError.write(Data("readme-shots: window not shareable: \(window.title)\n".utf8)); return
+            }
+            let filter = SCContentFilter(desktopIndependentWindow: scWindow)
+            let config = SCStreamConfiguration()
+            config.width = Int(filter.contentRect.width * CGFloat(filter.pointPixelScale))
+            config.height = Int(filter.contentRect.height * CGFloat(filter.pointPixelScale))
+            config.showsCursor = false
+            config.ignoreShadowsSingleWindow = false                 // keep the native window shadow
+            let image = try await SCScreenshotManager.captureImage(contentFilter: filter, configuration: config)
+            guard let dest = CGImageDestinationCreateWithURL(url as CFURL, "public.png" as CFString, 1, nil) else { return }
+            CGImageDestinationAddImage(dest, image, nil)
+            CGImageDestinationFinalize(dest)
+            FileHandle.standardError.write(Data("readme-shots: wrote \(url.path) (\(image.width)x\(image.height))\n".utf8))
+        } catch {
+            FileHandle.standardError.write(Data("readme-shots: \(window.title): \(error.localizedDescription)\n".utf8))
+        }
+    }
+}
+#endif
