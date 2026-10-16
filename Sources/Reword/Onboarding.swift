@@ -5,14 +5,22 @@ import SwiftUI
 /// First-launch welcome: where Reword lives, its shortcuts, and a live setup checklist.
 @MainActor
 enum OnboardingWindow {
-    static let shownKey = "onboardingShown"
+    static let shownKey = "onboardingShownForInstall"
     private static var window: NSWindow?
     static var current: NSWindow? { window }
 
-    static var shouldShowOnLaunch: Bool { !UserDefaults.standard.bool(forKey: shownKey) }
+    /// Settings survive deleting the app, so "first run" is tracked per installed copy: every copy of Reword.app
+    /// into Applications gets a new file identity (device + inode), and the welcome window shows once for it.
+    private static var installID: String {
+        var info = stat()
+        guard stat(Bundle.main.bundlePath, &info) == 0 else { return "unknown" }
+        return "\(info.st_dev):\(info.st_ino)"
+    }
+
+    static var shouldShowOnLaunch: Bool { UserDefaults.standard.string(forKey: shownKey) != installID }
 
     static func show(delegate: NSWindowDelegate?, tryIt: @escaping () -> Void) {
-        UserDefaults.standard.set(true, forKey: shownKey)
+        UserDefaults.standard.set(installID, forKey: shownKey)
         if window == nil {
             let host = NSHostingController(rootView: OnboardingView(tryIt: tryIt, close: { Self.window?.performClose(nil) }))
             host.sizingOptions = [.preferredContentSize]
