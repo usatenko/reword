@@ -22,7 +22,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationDidFinishLaunching(_ notification: Notification) {
         Prefs.registerDefaults()
         setUpStatusItem()
-        Task { await HyMTEngine.shared.warmUp() }   // load the model now so the first popup is fast
 
         Hotkeys.handlers = [
             .inputTranslate: { [weak self] in self?.showInputTranslation() },
@@ -31,11 +30,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         ]
         Hotkeys.apply()
 
-        model.pinned = CommandLine.arguments.contains("--pin")
-        if CommandLine.arguments.contains("--show") { showInputTranslation() }
+        if CommandLine.arguments.contains("--show") { showInputTranslation() }   // used by scripted UI tests
     }
 
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        model.cancelAll()                            // stop generating so the engine can be freed right away
         Task {
             await HyMTEngine.shared.shutdown()
             sender.reply(toApplicationShouldTerminate: true)
@@ -88,9 +87,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     // MARK: Actions
 
+    private var readingSelection = false
+
     private func translateSelection() async {
+        // One read at a time: overlapping reads would save each other's ⌘C as the "original" clipboard.
+        guard !readingSelection else { return }
+        readingSelection = true
+        defer { readingSelection = false }
         let text = await SelectionReader.selectedText() ?? ""
-        showPanel(nearMouse: true)
+        showPanel()
         if text.isEmpty {
             model.clear()
             if !SelectionReader.isTrusted { SelectionReader.promptForAccessibility() }
@@ -101,26 +106,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
     private func showInputTranslation() {
         model.clear()
-        showPanel(nearMouse: false)
+        showPanel()
         model.focusInput()
     }
 
     private func translateScreenshot() async {
-        if panel.isVisible && !model.pinned { panel.orderOut(nil) }
+        // Hide the panel even when pinned, so it isn't captured; it comes back with the result.
+        let wasVisible = panel.isVisible
+        if wasVisible { panel.orderOut(nil) }
         do {
             let text = try await ScreenOCR.captureAndRecognize()
-            showPanel(nearMouse: false)
+            showPanel()
             model.load(text)
         } catch ScreenOCR.Failure.cancelled {
-            return
+            if wasVisible && model.pinned { showPanel() }
         } catch {
-            showPanel(nearMouse: false)
+            showPanel()
             model.clear()
             model.notice = error.localizedDescription
         }
     }
 
-    private func showPanel(nearMouse: Bool) {
+    private func showPanel() {
         // The panel reopens where the user left it (frame autosave); first launch centers it.
         if !panel.isVisible, UserDefaults.standard.string(forKey: "NSWindow Frame TranslatorPanel") == nil {
             panel.center()
@@ -168,6 +175,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return NSSize(width: max(frameSize.width, Self.panelMinimum.width), height: max(frameSize.height, Self.panelMinimum.height))
     }
 
+    /// Settings is rebuilt on each open, so its permission polling stops while it's closed.
+    func windowWillClose(_ notification: Notification) {
+        if (notification.object as? NSWindow) === settingsWindow { settingsWindow = nil }
+    }
+
     func windowDidResignKey(_ notification: Notification) {
         guard (notification.object as? NSWindow) === panel, !model.pinned else { return }
         // Keep the panel while the system language-download sheet or our settings window is in front.
@@ -188,6 +200,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             window.title = "Reword Settings"
             window.styleMask = [.titled, .closable]
             window.isReleasedWhenClosed = false
+            window.delegate = self
             settingsWindow = window
         }
         // The floating popup would cover Settings; step it aside unless the user pinned it.

@@ -88,14 +88,25 @@ struct Shortcut: Equatable {
 @MainActor
 enum Hotkeys {
     static var handlers: [ShortcutAction: () -> Void] = [:]
+    /// Actions whose shortcut couldn't be registered (taken by another app, or duplicated here).
+    static private(set) var unavailable: Set<ShortcutAction> = []
 
     static func apply() {
         HotKeyCenter.shared.unregisterAll()
+        unavailable = []
+        var used: Set<String> = []
         for action in ShortcutAction.allCases {
             guard let shortcut = Shortcut.current(action), let handler = handlers[action] else { continue }
-            HotKeyCenter.shared.register(keyCode: shortcut.keyCode, modifiers: shortcut.carbonModifiers, handler: handler)
+            let key = "\(shortcut.keyCode):\(shortcut.carbonModifiers)"
+            if used.contains(key) || !HotKeyCenter.shared.register(keyCode: shortcut.keyCode, modifiers: shortcut.carbonModifiers, handler: handler) {
+                unavailable.insert(action)
+            }
+            used.insert(key)
         }
+        NotificationCenter.default.post(name: changed, object: nil)
     }
+
+    static let changed = Notification.Name("RewordHotkeysChanged")
 
     /// While recording a new shortcut, the old ones must not fire.
     static func suspend() { HotKeyCenter.shared.unregisterAll() }
@@ -106,9 +117,16 @@ struct ShortcutRecorder: View {
     @State private var shortcut: Shortcut?
     @State private var recording = false
     @State private var monitor: Any?
+    @State private var unavailable = false
+    private static let recordingStarted = Notification.Name("RewordShortcutRecordingStarted")
 
     var body: some View {
         HStack(spacing: 4) {
+            if unavailable && !recording {
+                Image(systemName: "exclamationmark.triangle.fill")
+                    .foregroundStyle(.orange)
+                    .help("This shortcut is taken by another app or used twice. Choose a different one.")
+            }
             Button(action: { recording ? stop() : start() }) {
                 Text(recording ? "Type shortcut…" : (shortcut?.display ?? "Not set"))
                     .monospaced()
@@ -122,11 +140,22 @@ struct ShortcutRecorder: View {
                 .help("Remove shortcut")
             }
         }
-        .onAppear { shortcut = Shortcut.current(action) }
+        .onAppear {
+            shortcut = Shortcut.current(action)
+            unavailable = Hotkeys.unavailable.contains(action)
+        }
         .onDisappear { if recording { stop() } }
+        .onReceive(NotificationCenter.default.publisher(for: Hotkeys.changed)) { _ in
+            unavailable = Hotkeys.unavailable.contains(action)
+        }
+        .onReceive(NotificationCenter.default.publisher(for: Self.recordingStarted)) { note in
+            // Only one recorder listens for keys at a time.
+            if recording, (note.object as? String) != action.rawValue { stop() }
+        }
     }
 
     private func start() {
+        NotificationCenter.default.post(name: Self.recordingStarted, object: action.rawValue)
         recording = true
         Hotkeys.suspend()
         monitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { event in

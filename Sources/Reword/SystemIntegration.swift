@@ -16,19 +16,21 @@ final class HotKeyCenter {
     private var nextID: UInt32 = 1
     private var installed = false
 
-    func register(keyCode: Int, modifiers: Int, handler: @escaping () -> Void) {
+    @discardableResult
+    func register(keyCode: Int, modifiers: Int, handler: @escaping () -> Void) -> Bool {
         installHandlerIfNeeded()
         let id = nextID
         nextID += 1
         var ref: EventHotKeyRef?
-        let hotKeyID = EventHotKeyID(signature: OSType(0x4C444354), id: id) // 'LDCT'
+        let hotKeyID = EventHotKeyID(signature: OSType(0x52575244), id: id) // 'RWRD'
         let status = RegisterEventHotKey(UInt32(keyCode), UInt32(modifiers), hotKeyID, GetApplicationEventTarget(), 0, &ref)
         guard status == noErr, let ref else {
             NSLog("Reword: hotkey registration failed (%d) for key %d", Int(status), keyCode)
-            return
+            return false
         }
         refs.append(ref)
         handlers[id] = handler
+        return true
     }
 
     private func installHandlerIfNeeded() {

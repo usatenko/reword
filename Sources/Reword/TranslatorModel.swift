@@ -33,8 +33,8 @@ final class TranslatorModel: ObservableObject {
     static let auto = "auto"
 
     @Published var input = ""
-    @Published var sourceChoice = TranslatorModel.auto
-    @Published var targetChoice = TranslatorModel.auto
+    @Published var sourceChoice = TranslatorModel.auto { didSet { choicesChanged() } }
+    @Published var targetChoice = TranslatorModel.auto { didSet { choicesChanged() } }
     @Published private(set) var detected: String?
     @Published private(set) var resolvedTarget: String?
     @Published private(set) var results: [EngineResult] = []
@@ -53,6 +53,24 @@ final class TranslatorModel: ObservableObject {
     private var debounce: Task<Void, Never>?
     private var lastRequest: String?
     private var run = 0
+    private var pendingChoiceChange = false
+
+    /// Several choice changes in one turn (e.g. swapping both languages) translate once.
+    private func choicesChanged() {
+        guard !pendingChoiceChange else { return }
+        pendingChoiceChange = true
+        Task { @MainActor in
+            self.pendingChoiceChange = false
+            guard !self.input.isEmpty, self.requestKey != self.lastRequest else { return }
+            self.translate()
+        }
+    }
+
+    /// Stops any translation in progress (used when quitting).
+    func cancelAll() {
+        debounce?.cancel()
+        task?.cancel()
+    }
 
     /// Called on every edit: updates detection now and translates once typing pauses.
     func inputChanged() {
@@ -126,9 +144,10 @@ final class TranslatorModel: ObservableObject {
 
     private func update(_ id: String, _ state: EngineResult.State, run: Int) {
         guard run == self.run, let index = results.firstIndex(where: { $0.id == id }) else { return }
-        // A late streaming chunk must not overwrite the final result.
+        // A late streaming chunk must not overwrite the final result or a longer chunk that arrived first.
         if case .streaming = state, case .done = results[index].state { return }
         if case .streaming = state, case .failed = results[index].state { return }
+        if case let .streaming(new) = state, case let .streaming(old) = results[index].state, new.count < old.count { return }
         results[index].state = state
     }
 
@@ -153,8 +172,7 @@ final class TranslatorModel: ObservableObject {
     func swapLanguages() {
         guard let detected, let resolvedTarget else { return }
         sourceChoice = resolvedTarget
-        targetChoice = detected
-        translate()
+        targetChoice = detected          // choicesChanged() translates once
     }
 
     func load(_ text: String) {
@@ -174,5 +192,6 @@ final class TranslatorModel: ObservableObject {
         results = []
         detected = nil
         resolvedTarget = nil
+        lastRequest = requestKey         // the empty input must not trigger a debounced translate (it would clear a notice)
     }
 }

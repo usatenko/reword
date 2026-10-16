@@ -25,7 +25,6 @@ enum ScreenOCR {
     /// Lets the user drag a region, then returns the recognized text.
     @MainActor
     static func captureAndRecognize() async throws -> String {
-        log.info("screenshot requested, screen access=\(hasScreenAccess, privacy: .public)")
         if !hasScreenAccess {
             CGRequestScreenCaptureAccess()
             PrivacyPane.screenRecording.open()
@@ -34,12 +33,8 @@ enum ScreenOCR {
         guard let region = await RegionSelector.select() else { throw Failure.cancelled }
         try await Task.sleep(for: .milliseconds(120))          // let the overlay leave the screen
         let image = try await capture(region)
-        log.info("captured \(image.width, privacy: .public)x\(image.height, privacy: .public) px")
-        log.info("starting OCR")
         do {
-            let text = try await recognize(image)
-            log.info("OCR done, \(text.count, privacy: .public) chars")
-            return text
+            return try await recognize(image)
         } catch {
             log.error("OCR failed: \(error.localizedDescription, privacy: .public)")
             throw error
@@ -66,7 +61,6 @@ enum ScreenOCR {
             request.automaticallyDetectsLanguage = true
             try VNImageRequestHandler(cgImage: image).perform([request])
             let lines = (request.results ?? []).compactMap { $0.topCandidates(1).first?.string }
-            log.info("OCR found \(lines.count, privacy: .public) lines")
             guard !lines.isEmpty else { throw Failure.noText }
             return lines.joined(separator: "\n")
         }.value

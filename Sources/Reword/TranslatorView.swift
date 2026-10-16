@@ -145,9 +145,7 @@ private struct InputOutputSplit<Top: View, Bottom: View>: NSViewRepresentable {
 
 struct TranslatorView: View {
     @ObservedObject var model: TranslatorModel
-    @ObservedObject var downloader = ModelDownloader.shared
     var openSettings: () -> Void
-    @FocusState private var inputFocused: Bool
 
     var body: some View {
         VStack(spacing: 6) {
@@ -216,8 +214,6 @@ struct TranslatorView: View {
         .padding(.horizontal, 8)
         .background(Color.primary.opacity(0.07), in: cardShape)
         .frame(maxWidth: .infinity)
-        .onChange(of: model.sourceChoice) { if !model.input.isEmpty { model.translate() } }
-        .onChange(of: model.targetChoice) { if !model.input.isEmpty { model.translate() } }
     }
 }
 
@@ -285,7 +281,9 @@ private struct OutputPane: View {
     @ObservedObject var downloader = ModelDownloader.shared
 
     var body: some View {
-        content.padding(.top, 2)                 // small gap below the divider
+        content
+            .padding(.top, 2)                    // small gap below the divider
+            .onChange(of: downloader.isInstalled) { if downloader.isInstalled { model.translate() } }
     }
 
     @ViewBuilder private var content: some View {
@@ -299,7 +297,7 @@ private struct OutputPane: View {
         } else {
             ScrollView {
                 VStack(spacing: 6) {
-                    if !downloader.isInstalled { ModelDownloadView(downloader: downloader, onInstalled: model.translate) }
+                    if !downloader.isInstalled { ModelDownloadView(downloader: downloader, onInstalled: {}) }
                     if let notice = model.notice {
                         Text(notice).font(bodyFont).foregroundStyle(.orange)
                             .frame(maxWidth: .infinity, alignment: .leading).padding(10)

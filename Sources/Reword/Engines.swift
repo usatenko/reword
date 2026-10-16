@@ -86,32 +86,33 @@ enum ModelStore {
     }
 
     // A verified file is remembered by size and modification time; any change forces a full re-hash.
-    private static var fingerprintKey: String { "verified.\(fileName)" }
+    static func url(for quant: ModelQuant) -> URL { directory.appendingPathComponent("Hy-MT2-1.8B-\(quant.rawValue).gguf") }
 
-    private static func fingerprint(_ url: URL) -> String? {
-        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+    private static func fingerprint(_ quant: ModelQuant) -> String? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url(for: quant).path),
               let size = attrs[.size] as? Int64, let date = attrs[.modificationDate] as? Date else { return nil }
         return "\(quant.sha256):\(size):\(date.timeIntervalSince1970)"
     }
 
     static var isVerified: Bool {
-        guard let current = fingerprint(localURL) else { return false }
-        return UserDefaults.standard.string(forKey: fingerprintKey) == current
+        guard let current = fingerprint(quant) else { return false }
+        return UserDefaults.standard.string(forKey: "verified.\(quant.rawValue)") == current
     }
 
-    static func markVerified() {
-        UserDefaults.standard.set(fingerprint(localURL), forKey: fingerprintKey)
+    static func markVerified(_ quant: ModelQuant = quant) {
+        UserDefaults.standard.set(fingerprint(quant), forKey: "verified.\(quant.rawValue)")
     }
 
-    /// Streams a file through SHA-256 and compares it with the published hash of the selected quantization.
-    static func matchesPublishedHash(_ url: URL) -> Bool {
+    /// Streams a file through SHA-256 and compares it with an expected hex digest.
+    nonisolated static func matches(_ url: URL, sha256 expected: String) -> Bool {
         guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
         defer { try? handle.close() }
         var hasher = SHA256()
         while let chunk = try? handle.read(upToCount: 8 << 20), !chunk.isEmpty {
+            if Task.isCancelled { return false }
             hasher.update(data: chunk)
         }
-        return hasher.finalize().map { String(format: "%02x", $0) }.joined() == quant.sha256
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined() == expected
     }
 
     static var sizeOnDisk: String {
@@ -168,17 +169,21 @@ actor HyMTEngine: TranslationEngine {
 
     func translate(_ text: String, from source: String, to target: String,
                    onPartial: @escaping @Sendable (String) -> Void) async throws -> String {
+        try Task.checkCancellation()                 // a superseded request skips the expensive prefill
         unloadTask?.cancel()
         defer { scheduleUnload() }
         try loadIfNeeded()
         guard let model, let context else { throw EngineError.modelLoadFailed(ModelStore.localURL.path) }
         let vocab = llama_model_get_vocab(model)
 
-        var tokens = tokenize(HyMTPrompt.prefix, vocab: vocab, special: true)
-            + tokenize(HyMTPrompt.body(text, from: source, to: target), vocab: vocab, special: false)
+        let textTokens = tokenize(HyMTPrompt.body(text, from: source, to: target), vocab: vocab, special: false)
+        var tokens = tokenize(HyMTPrompt.prefix, vocab: vocab, special: true) + textTokens
             + tokenize(HyMTPrompt.suffix, vocab: vocab, special: true)
-        let budget = Int(contextSize) - tokens.count
-        guard budget > 16 else { throw EngineError.tooLong }
+        // Room for the translation: generous for scripts that need more tokens, but bounded so a
+        // repetition loop can't run to the end of the context.
+        let budget = min(Int(contextSize) - tokens.count, 3 * textTokens.count + 128)
+        guard budget >= 128 else { throw EngineError.tooLong }
+        try Task.checkCancellation()
 
         llama_memory_clear(llama_get_memory(context), true)
         let sampler = makeSampler(vocab: vocab)
@@ -191,17 +196,24 @@ actor HyMTEngine: TranslationEngine {
 
         var output: [UInt8] = []
         var piece = [CChar](repeating: 0, count: 256)
+        var finished = false
+        var lastEmit = ContinuousClock.now
         for _ in 0..<budget {
             try Task.checkCancellation()
             var token = llama_sampler_sample(sampler, context, -1)
-            if llama_vocab_is_eog(vocab, token) { break }
+            if llama_vocab_is_eog(vocab, token) { finished = true; break }
             let n = llama_token_to_piece(vocab, token, &piece, Int32(piece.count), 0, false)
             if n > 0 { output.append(contentsOf: piece[0..<Int(n)].map { UInt8(bitPattern: $0) }) }
-            onPartial(Self.decode(output).trimmingCharacters(in: CharacterSet(charactersIn: "\u{FFFD}")))
+            // Stream at most ~20 updates a second; decoding the whole buffer per token would be O(n²).
+            if ContinuousClock.now - lastEmit > .milliseconds(50) {
+                lastEmit = .now
+                onPartial(Self.decode(output).trimmingCharacters(in: CharacterSet(charactersIn: "\u{FFFD}")))
+            }
             status = llama_decode(context, llama_batch_get_one(&token, 1))
             guard status == 0 else { throw EngineError.decodeFailed(status) }
         }
-        return Self.decode(output).trimmingCharacters(in: .whitespacesAndNewlines)
+        let result = Self.decode(output).trimmingCharacters(in: .whitespacesAndNewlines)
+        return finished ? result : result + " …\n\n(The translation was cut off: the text is too long. Try a shorter passage.)"
     }
 
     /// Loads the model ahead of the first translation so the popup feels instant.
@@ -246,7 +258,7 @@ actor HyMTEngine: TranslationEngine {
         try? ModelStore.ensureDirectory()
         // Only load a file whose SHA-256 matches the published one (re-hashed if it changed since last check).
         if !ModelStore.isVerified {
-            guard ModelStore.matchesPublishedHash(ModelStore.localURL) else { throw EngineError.modelCorrupted }
+            guard ModelStore.matches(ModelStore.localURL, sha256: ModelStore.quant.sha256) else { throw EngineError.modelCorrupted }
             ModelStore.markVerified()
         }
         if !backendReady {

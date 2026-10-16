@@ -6,8 +6,6 @@ struct AppLanguage: Identifiable, Hashable {
     let id: String          // BCP-47 identifier, e.g. "en", "zh-Hans"
     let name: String
 
-    var language: Locale.Language { Locale.Language(identifier: id) }
-
     static let all: [AppLanguage] = [
         // Hy-MT2's 33 languages and 5 regional languages/dialects (model card).
         "en", "zh-Hans", "zh-Hant", "ja", "ko", "fr", "de", "es", "it", "pt", "ru", "uk",
@@ -26,7 +24,7 @@ enum LanguageTools {
     /// Detects the dominant language of `text` on-device with NaturalLanguage.
     static func detect(_ text: String) -> String? {
         let recognizer = NLLanguageRecognizer()
-        recognizer.processString(text)
+        recognizer.processString(String(text.prefix(1000)))   // the opening is enough; keeps typing cheap
         guard let lang = recognizer.dominantLanguage, lang != .undetermined else { return nil }
         return lang.rawValue
     }
