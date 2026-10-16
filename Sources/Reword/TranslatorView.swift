@@ -426,7 +426,10 @@ struct ModelDownloadView: View {
         VStack(alignment: .leading, spacing: 4) {
             HStack(spacing: 8) {
                 Image(systemName: "arrow.down.circle").foregroundStyle(.tint)
-                if let progress = downloader.progress {
+                if downloader.verifying {
+                    ProgressView().controlSize(.small)
+                    Text("Verifying download…").foregroundStyle(.secondary)
+                } else if let progress = downloader.progress {
                     ProgressView(value: progress).controlSize(.small)
                     Text(progress.formatted(.percent.precision(.fractionLength(0)))).monospacedDigit().foregroundStyle(.secondary)
                     Button("Cancel", action: downloader.cancel).controlSize(.small)
@@ -541,6 +544,15 @@ struct SettingsView: View {
                     Text("15 min").tag(900)
                     Text("30 min").tag(1800)
                     Text("Never").tag(0)
+                }
+            }
+
+            Section {
+                LabeledContent("Version") {
+                    HStack(spacing: 8) {
+                        Text("\(AppInfo.version) (\(AppInfo.build))").foregroundStyle(.secondary).textSelection(.enabled)
+                        Button("About…") { AboutWindow.show() }
+                    }
                 }
             }
         }

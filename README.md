@@ -74,7 +74,11 @@ Pushing a tag such as `v1.0.0` runs `.github/workflows/release.yml` on a macOS r
 signs it with a Developer ID Application certificate (hardened runtime, secure timestamp), packages
 `Reword-1.0.0.dmg`, notarizes and staples it, and publishes it with its SHA-256 to GitHub Releases.
 
-Repository secrets used by the workflow:
+The job runs in the protected `release` environment: only `v*` tags can deploy to it, each run waits for
+an owner's approval, and a tag ruleset limits creating, moving or deleting `v*` tags to admins. Keep the
+signing secrets as **environment** secrets of `release`, not repository secrets.
+
+Secrets used by the workflow:
 
 | Secret | Value |
 | --- | --- |

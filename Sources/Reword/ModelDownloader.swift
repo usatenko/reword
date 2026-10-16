@@ -9,6 +9,7 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
     @Published private(set) var isInstalled = ModelStore.isInstalled
     @Published private(set) var progress: Double?
     @Published private(set) var error: String?
+    @Published private(set) var verifying = false
 
     private var task: URLSessionDownloadTask?
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
@@ -21,7 +22,7 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     func start() {
-        guard task == nil, !ModelStore.isInstalled else { return }
+        guard task == nil, !verifying, !ModelStore.isInstalled else { return }
         error = nil
         progress = 0
         task = session.downloadTask(with: ModelStore.remoteURL)
@@ -42,14 +43,18 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
     }
 
     nonisolated func urlSession(_ session: URLSession, downloadTask: URLSessionDownloadTask, didFinishDownloadingTo location: URL) {
-        // The temporary file disappears when this method returns, so move it synchronously.
+        // The temporary file disappears when this method returns, so move it to a staging name synchronously;
+        // it only becomes the model after its SHA-256 matches the published one.
         let status = (downloadTask.response as? HTTPURLResponse)?.statusCode ?? 0
+        let quant = ModelStore.quant
+        let final = ModelStore.localURL
+        let staging = final.appendingPathExtension("download")
         var failure: String?
         if status == 200 {
             do {
-                try FileManager.default.createDirectory(at: ModelStore.directory, withIntermediateDirectories: true)
-                try? FileManager.default.removeItem(at: ModelStore.localURL)
-                try FileManager.default.moveItem(at: location, to: ModelStore.localURL)
+                try ModelStore.ensureDirectory()
+                try? FileManager.default.removeItem(at: staging)
+                try FileManager.default.moveItem(at: location, to: staging)
             } catch {
                 failure = error.localizedDescription
             }
@@ -57,9 +62,24 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
             failure = "Download failed (HTTP \(status))."
         }
         MainActor.assumeIsolated {
-            self.error = failure
-            self.isInstalled = ModelStore.isInstalled
-            if self.isInstalled { Task { await HyMTEngine.shared.warmUp() } }
+            if let failure { self.error = failure; return }
+            self.verifying = true
+            Task {
+                let ok = await Task.detached(priority: .utility) { ModelStore.matchesPublishedHash(staging) }.value
+                if ok, quant == ModelStore.quant {
+                    try? FileManager.default.removeItem(at: final)
+                    do {
+                        try FileManager.default.moveItem(at: staging, to: final)
+                        ModelStore.markVerified()
+                    } catch { self.error = error.localizedDescription }
+                } else {
+                    try? FileManager.default.removeItem(at: staging)
+                    self.error = "The downloaded model failed its integrity check and was deleted. Please try again."
+                }
+                self.verifying = false
+                self.isInstalled = ModelStore.isInstalled
+                if self.isInstalled { await HyMTEngine.shared.warmUp() }
+            }
         }
     }
 

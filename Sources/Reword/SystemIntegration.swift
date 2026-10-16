@@ -77,7 +77,7 @@ enum SelectionReader {
         let system = AXUIElementCreateSystemWide()
         var focused: CFTypeRef?
         guard AXUIElementCopyAttributeValue(system, kAXFocusedUIElementAttribute as CFString, &focused) == .success,
-              let focused else { return nil }
+              let focused, CFGetTypeID(focused) == AXUIElementGetTypeID() else { return nil }
         var value: CFTypeRef?
         guard AXUIElementCopyAttributeValue(focused as! AXUIElement, kAXSelectedTextAttribute as CFString, &value) == .success
         else { return nil }
@@ -108,14 +108,17 @@ enum SelectionReader {
         up?.post(tap: .cghidEventTap)
 
         var text: String?
+        var copiedChange: Int?
         for _ in 0..<10 {
             try? await Task.sleep(for: .milliseconds(30))
             if pasteboard.changeCount != before {
                 text = pasteboard.string(forType: .string)
+                copiedChange = pasteboard.changeCount
                 break
             }
         }
-        if pasteboard.changeCount != before {
+        // Restore only if the clipboard still holds our ⌘C result; never overwrite something copied since.
+        if let copiedChange, pasteboard.changeCount == copiedChange {
             pasteboard.clearContents()
             if !saved.isEmpty { pasteboard.writeObjects(saved) }
         }

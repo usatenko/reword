@@ -1,3 +1,4 @@
+import CryptoKit
 import Foundation
 import llama
 
@@ -14,6 +15,7 @@ enum EngineError: LocalizedError {
     case modelMissing(URL)
     case modelLoadFailed(String)
     case tooLong
+    case modelCorrupted
     case decodeFailed(Int32)
 
     var errorDescription: String? {
@@ -22,6 +24,7 @@ enum EngineError: LocalizedError {
             return "The translation model isn't downloaded yet. Download it from the popup or Settings."
         case let .modelLoadFailed(path): return "Couldn't load the model at \(path)."
         case .tooLong: return "The text is too long for the model's context window."
+        case .modelCorrupted: return "The model file doesn't match its published checksum and wasn't loaded. Delete it in Settings › Show in Finder and download it again."
         case let .decodeFailed(code): return "The model failed while generating (llama_decode returned \(code))."
         }
     }
@@ -37,6 +40,14 @@ enum ModelQuant: String, CaseIterable, Identifiable {
         case .q4: return 1_133_080_448
         case .q6: return 1_474_785_120
         case .q8: return 1_908_528_192
+        }
+    }
+    /// SHA-256 published by Hugging Face for tencent/Hy-MT2-1.8B-GGUF; downloads must match it.
+    var sha256: String {
+        switch self {
+        case .q4: return "dc5f44fcf1fa496ee7ad725982c0c8c553a4de00259b53af84c4b89fb0c06699"
+        case .q6: return "d98fe604dec1f28f58f80d7d560f7177e584d3b8e5835862687660e5ff97cb40"
+        case .q8: return "5c3fe0b1408a5ceb0143184ef247b11b579c525f4b02b060e6c851bb76fef1a4"
         }
     }
     var label: String {
@@ -67,6 +78,42 @@ enum ModelStore {
     static var localURL: URL { directory.appendingPathComponent(fileName) }
     static var isInstalled: Bool { FileManager.default.fileExists(atPath: localURL.path) }
 
+    /// Creates the model folder readable only by this user.
+    static func ensureDirectory() throws {
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true,
+                                                attributes: [.posixPermissions: 0o700])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: directory.path)
+    }
+
+    // A verified file is remembered by size and modification time; any change forces a full re-hash.
+    private static var fingerprintKey: String { "verified.\(fileName)" }
+
+    private static func fingerprint(_ url: URL) -> String? {
+        guard let attrs = try? FileManager.default.attributesOfItem(atPath: url.path),
+              let size = attrs[.size] as? Int64, let date = attrs[.modificationDate] as? Date else { return nil }
+        return "\(quant.sha256):\(size):\(date.timeIntervalSince1970)"
+    }
+
+    static var isVerified: Bool {
+        guard let current = fingerprint(localURL) else { return false }
+        return UserDefaults.standard.string(forKey: fingerprintKey) == current
+    }
+
+    static func markVerified() {
+        UserDefaults.standard.set(fingerprint(localURL), forKey: fingerprintKey)
+    }
+
+    /// Streams a file through SHA-256 and compares it with the published hash of the selected quantization.
+    static func matchesPublishedHash(_ url: URL) -> Bool {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return false }
+        defer { try? handle.close() }
+        var hasher = SHA256()
+        while let chunk = try? handle.read(upToCount: 8 << 20), !chunk.isEmpty {
+            hasher.update(data: chunk)
+        }
+        return hasher.finalize().map { String(format: "%02x", $0) }.joined() == quant.sha256
+    }
+
     static var sizeOnDisk: String {
         let bytes = (try? FileManager.default.attributesOfItem(atPath: localURL.path)[.size] as? Int64) ?? 0
         return ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
@@ -76,7 +123,13 @@ enum ModelStore {
 /// Builds Hy-MT2 prompts as documented on the model card: the Chinese template when Chinese is
 /// on either side, the English template otherwise, with full language names in the prompt's language.
 enum HyMTPrompt {
-    static func make(_ text: String, from source: String, to target: String) -> String {
+    /// chat_template.jinja: no system prompt, one user turn, generation prompt.
+    static let prefix = "<｜hy_begin▁of▁sentence｜><｜hy_User｜>"
+    static let suffix = "<｜hy_Assistant｜>"
+
+    /// The user turn: the instruction plus the text. It is tokenized as plain text, so control markers
+    /// inside the text being translated can't act as real special tokens.
+    static func body(_ text: String, from source: String, to target: String) -> String {
         let chinese = isChinese(source) || isChinese(target)
         let body: String
         if chinese {
@@ -86,8 +139,7 @@ enum HyMTPrompt {
             let name = Locale(identifier: "en").localizedString(forIdentifier: target) ?? target
             body = "Translate the following text into \(name). Note that you should only output the translated result without any additional explanation:\n\n\(text)"
         }
-        // chat_template.jinja: no system prompt, one user turn, generation prompt.
-        return "<｜hy_begin▁of▁sentence｜><｜hy_User｜>\(body)<｜hy_Assistant｜>"
+        return body
     }
 
     private static func isChinese(_ id: String) -> Bool {
@@ -122,7 +174,9 @@ actor HyMTEngine: TranslationEngine {
         guard let model, let context else { throw EngineError.modelLoadFailed(ModelStore.localURL.path) }
         let vocab = llama_model_get_vocab(model)
 
-        var tokens = tokenize(HyMTPrompt.make(text, from: source, to: target), vocab: vocab)
+        var tokens = tokenize(HyMTPrompt.prefix, vocab: vocab, special: true)
+            + tokenize(HyMTPrompt.body(text, from: source, to: target), vocab: vocab, special: false)
+            + tokenize(HyMTPrompt.suffix, vocab: vocab, special: true)
         let budget = Int(contextSize) - tokens.count
         guard budget > 16 else { throw EngineError.tooLong }
 
@@ -189,6 +243,12 @@ actor HyMTEngine: TranslationEngine {
         if context != nil, loadedPath == ModelStore.localURL.path { return }
         unload()                                     // a different quantization was selected
         guard ModelStore.isInstalled else { throw EngineError.modelMissing(ModelStore.localURL) }
+        try? ModelStore.ensureDirectory()
+        // Only load a file whose SHA-256 matches the published one (re-hashed if it changed since last check).
+        if !ModelStore.isVerified {
+            guard ModelStore.matchesPublishedHash(ModelStore.localURL) else { throw EngineError.modelCorrupted }
+            ModelStore.markVerified()
+        }
         if !backendReady {
             llama_log_set({ _, _, _ in }, nil)
             llama_backend_init()
@@ -213,15 +273,16 @@ actor HyMTEngine: TranslationEngine {
         loadedPath = ModelStore.localURL.path
     }
 
-    private func tokenize(_ text: String, vocab: OpaquePointer?) -> [llama_token] {
+    /// `special` parses control markers such as the role tokens; it is only enabled for the template parts.
+    private func tokenize(_ text: String, vocab: OpaquePointer?, special: Bool) -> [llama_token] {
         let utf8 = Array(text.utf8CString)
         let length = Int32(utf8.count - 1)
         var tokens = [llama_token](repeating: 0, count: utf8.count + 8)
-        // The prompt already carries BOS and the role markers, so parse specials but add none.
-        var n = llama_tokenize(vocab, utf8, length, &tokens, Int32(tokens.count), false, true)
+        // BOS is part of the template prefix, so never add it automatically.
+        var n = llama_tokenize(vocab, utf8, length, &tokens, Int32(tokens.count), false, special)
         if n < 0 {
             tokens = [llama_token](repeating: 0, count: Int(-n))
-            n = llama_tokenize(vocab, utf8, length, &tokens, Int32(tokens.count), false, true)
+            n = llama_tokenize(vocab, utf8, length, &tokens, Int32(tokens.count), false, special)
         }
         return Array(tokens.prefix(Int(max(n, 0))))
     }

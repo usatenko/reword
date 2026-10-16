@@ -59,6 +59,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menuItems[.screenshotTranslate] = menu.addItem(withTitle: "Screenshot Translate", action: #selector(menuTranslateScreenshot), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "About Reword", action: #selector(openAbout), keyEquivalent: "")
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit Reword", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
         quit.target = NSApp
@@ -172,6 +173,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Keep the panel while the system language-download sheet or our settings window is in front.
         if panel.attachedSheet != nil || settingsWindow?.isKeyWindow == true { return }
         panel.orderOut(nil)
+    }
+
+    @objc private func openAbout() {
+        if panel.isVisible, !model.pinned { panel.orderOut(nil) }
+        AboutWindow.show()
     }
 
     @objc private func openSettings() {

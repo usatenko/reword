@@ -11,6 +11,7 @@
 #   REQUIRE_NOTARIZATION=1  fail instead of skipping when no notarization credentials are set (CI sets this).
 set -euo pipefail
 VERSION="${1:?usage: scripts/release.sh <version>}"
+[[ "$VERSION" =~ ^[0-9]+(\.[0-9]+){1,2}([-.][0-9A-Za-z.]+)?$ ]] || { echo "error: invalid version '$VERSION'" >&2; exit 1; }
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 cd "$ROOT"
 
@@ -20,6 +21,8 @@ IDENTITY="${REWORD_SIGN_IDENTITY:-$(security find-identity -v -p codesigning | a
 REWORD_SIGN_IDENTITY="$IDENTITY" REWORD_HARDENED=1 REWORD_VERSION="$VERSION" \
     REWORD_BUILD="${GITHUB_RUN_NUMBER:-1}" "$ROOT/scripts/build_app.sh"
 APP="$ROOT/build/Reword.app"
+codesign -dv "$APP" 2>&1 | grep -q 'flags=.*runtime' || { echo "error: hardened runtime is not enabled" >&2; exit 1; }
+codesign -dv "$APP" 2>&1 | grep -q 'Authority=Developer ID Application' || { echo "error: app is not Developer ID signed" >&2; exit 1; }
 
 # Disk image with the app and an Applications shortcut.
 DIST="$ROOT/dist"
@@ -46,6 +49,7 @@ if [ ${#NOTARY_ARGS[@]} -gt 0 ]; then
     xcrun stapler staple "$DMG"
     xcrun stapler validate "$DMG"
     spctl --assess --type open --context context:primary-signature -vv "$DMG"
+    spctl --assess --type execute -vv "$APP"
 elif [ "${REQUIRE_NOTARIZATION:-0}" = "1" ]; then
     echo "error: notarization credentials are not set" >&2
     exit 1
