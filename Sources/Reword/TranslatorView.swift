@@ -359,7 +359,6 @@ private struct LanguageMenu: View {
 struct ResultCard: View {
     let result: EngineResult
     let language: String?
-    @State private var collapsed = false
 
     var body: some View {
         VStack(alignment: .leading, spacing: 8) {
@@ -379,13 +378,8 @@ struct ResultCard: View {
                     .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 4))
                 Spacer()
                 if isWorking { ProgressView().controlSize(.mini) }
-                Button { withAnimation(.snappy) { collapsed.toggle() } } label: {
-                    Image(systemName: collapsed ? "chevron.left" : "chevron.down").font(.system(size: 10, weight: .medium))
-                }
-                .buttonStyle(.plain)
-                .foregroundStyle(.secondary)
             }
-            if !collapsed { content }
+            content
         }
         .padding(10)
     }
@@ -523,7 +517,7 @@ struct SettingsView: View {
 
             Section {
                 Picker("Model", selection: $quant) {
-                    ForEach(ModelQuant.allCases) { Text("Hy-MT2 1.8B · \($0.label)").tag($0.rawValue) }
+                    ForEach(ModelQuant.allCases) { Text($0.label).tag($0.rawValue) }
                 }
                 .onChange(of: quant) {
                     downloader.refresh()

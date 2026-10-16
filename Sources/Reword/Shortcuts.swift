@@ -9,9 +9,9 @@ enum ShortcutAction: String, CaseIterable, Identifiable {
     var id: String { rawValue }
     var title: String {
         switch self {
-        case .inputTranslate: return "Show translation window"
+        case .inputTranslate: return "Open Reword"
         case .selectionTranslate: return "Translate selected text"
-        case .screenshotTranslate: return "Screenshot translate (OCR)"
+        case .screenshotTranslate: return "Translate screenshot"
         }
     }
     var defaultsKey: String { "shortcut.\(rawValue)" }

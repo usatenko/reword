@@ -54,9 +54,9 @@ enum ModelQuant: String, CaseIterable, Identifiable {
     var label: String {
         let size = ByteCountFormatter.string(fromByteCount: bytes, countStyle: .file)
         switch self {
-        case .q4: return "\(rawValue) · \(size) · smallest"
-        case .q6: return "\(rawValue) · \(size) · balanced"
-        case .q8: return "\(rawValue) · \(size) · best quality"
+        case .q4: return "Small · \(size) · fastest"
+        case .q6: return "Medium · \(size)"
+        case .q8: return "Large · \(size) · best quality"
         }
     }
 }
@@ -153,7 +153,7 @@ enum HyMTPrompt {
 actor HyMTEngine: TranslationEngine {
     nonisolated let id = "hy-mt2"
     nonisolated let name = "Hy-MT2 Translate"
-    nonisolated var detail: String { "1.8B · \(ModelStore.quant.rawValue) · local" }
+    nonisolated var detail: String { "on-device" }
 
     static let shared = HyMTEngine()
 

@@ -24,6 +24,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func applicationDidFinishLaunching(_ notification: Notification) {
         Prefs.registerDefaults()
         setUpStatusItem()
+        setUpEditMenu()
         // First run (or the model file was removed): fetch the selected model right away so Reword is ready.
         if !ModelStore.isInstalled { ModelDownloader.shared.start() }
 
@@ -64,6 +65,26 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         return .terminateLater
     }
 
+    /// A menu bar app has no visible main menu, but the standard editing shortcuts (⌘A, ⌘C, ⌘V, ⌘X, ⌘Z)
+    /// are dispatched through the Edit menu's key equivalents, so install one that is never shown.
+    private func setUpEditMenu() {
+        let edit = NSMenu(title: "Edit")
+        edit.addItem(withTitle: "Undo", action: Selector(("undo:")), keyEquivalent: "z")
+        let redo = edit.addItem(withTitle: "Redo", action: Selector(("redo:")), keyEquivalent: "z")
+        redo.keyEquivalentModifierMask = [.command, .shift]
+        edit.addItem(.separator())
+        edit.addItem(withTitle: "Cut", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: "Copy", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: "Paste", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        edit.addItem(withTitle: "Select All", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        let editItem = NSMenuItem(title: "Edit", action: nil, keyEquivalent: "")
+        editItem.submenu = edit
+        let main = NSMenu()
+        main.addItem(NSMenuItem(title: "Reword", action: nil, keyEquivalent: ""))   // app menu slot
+        main.addItem(editItem)
+        NSApp.mainMenu = main
+    }
+
     // MARK: Status item
 
     private func setUpStatusItem() {
@@ -75,9 +96,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
 
         let menu = NSMenu()
         menu.delegate = self
-        menuItems[.inputTranslate] = menu.addItem(withTitle: "Input Translation", action: #selector(menuInputTranslation), keyEquivalent: "")
+        menuItems[.inputTranslate] = menu.addItem(withTitle: "Open Reword", action: #selector(menuInputTranslation), keyEquivalent: "")
         menuItems[.selectionTranslate] = menu.addItem(withTitle: "Translate Selection", action: #selector(menuTranslateSelection), keyEquivalent: "")
-        menuItems[.screenshotTranslate] = menu.addItem(withTitle: "Screenshot Translate", action: #selector(menuTranslateScreenshot), keyEquivalent: "")
+        menuItems[.screenshotTranslate] = menu.addItem(withTitle: "Translate Screenshot", action: #selector(menuTranslateScreenshot), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
         menu.addItem(withTitle: "Onboarding…", action: #selector(openOnboarding), keyEquivalent: "")
@@ -123,7 +144,13 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         showPanel()
         if text.isEmpty {
             model.clear()
-            if !SelectionReader.isTrusted { SelectionReader.promptForAccessibility() }
+            let shortcut = Shortcut.current(.selectionTranslate)?.display ?? "the shortcut"
+            if SelectionReader.isTrusted {
+                model.notice = "No text selected. Select text in any app, then press \(shortcut)."
+            } else {
+                model.notice = "Reword needs Accessibility access to read selected text. Allow it in System Settings, then press \(shortcut) again."
+                SelectionReader.promptForAccessibility()
+            }
         } else {
             model.load(text)
         }

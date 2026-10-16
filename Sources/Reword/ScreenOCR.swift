@@ -165,6 +165,19 @@ final class RegionSelector {
 
         override func mouseUp(with event: NSEvent) { onFinish?(selection) }
 
+        /// "Drag over the text to translate · Esc to cancel", centered near the top of each screen.
+        private func drawHint() {
+            let text = "Drag over the text to translate  ·  Esc to cancel" as NSString
+            let attrs: [NSAttributedString.Key: Any] = [.font: NSFont.systemFont(ofSize: 14, weight: .medium),
+                                                         .foregroundColor: NSColor.white]
+            let size = text.size(withAttributes: attrs)
+            let pill = NSRect(x: bounds.midX - size.width / 2 - 16, y: bounds.maxY - 90,
+                              width: size.width + 32, height: size.height + 14)
+            NSColor.black.withAlphaComponent(0.7).setFill()
+            NSBezierPath(roundedRect: pill, xRadius: pill.height / 2, yRadius: pill.height / 2).fill()
+            text.draw(at: NSPoint(x: pill.minX + 16, y: pill.minY + 7), withAttributes: attrs)
+        }
+
         override func keyDown(with event: NSEvent) {
             if event.keyCode == 53 { onFinish?(nil) } else { super.keyDown(with: event) }   // Esc
         }
@@ -172,6 +185,7 @@ final class RegionSelector {
         override func draw(_ dirtyRect: NSRect) {
             NSColor.black.withAlphaComponent(0.25).setFill()
             bounds.fill()
+            drawHint()
             guard let selection else { return }
             NSColor.clear.setFill()
             selection.fill(using: .copy)
