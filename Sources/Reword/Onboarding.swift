@@ -30,6 +30,7 @@ enum OnboardingWindow {
             window = newWindow
         }
         window?.delegate = delegate
+        watchSystemSettings()
         if window?.isVisible != true { window?.center() }
         NSApp.activate()
         window?.makeKeyAndOrderFront(nil)
@@ -46,9 +47,30 @@ enum OnboardingWindow {
         window?.orderFrontRegardless()
     }
 
+    private static var settingsObserver: NSObjectProtocol?
+
+    /// Leaving System Settings (closing it or switching away) hands focus to whatever app is next, not to Reword,
+    /// so the welcome window would stay buried. While it's open, bring it back each time System Settings loses focus.
+    private static func watchSystemSettings() {
+        guard settingsObserver == nil else { return }
+        settingsObserver = NSWorkspace.shared.notificationCenter.addObserver(
+            forName: NSWorkspace.didDeactivateApplicationNotification, object: nil, queue: .main) { note in
+            let app = note.userInfo?[NSWorkspace.applicationUserInfoKey] as? NSRunningApplication
+            guard app?.bundleIdentifier == "com.apple.systempreferences" else { return }
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.3) {
+                MainActor.assumeIsolated {
+                    guard window != nil, NSWorkspace.shared.frontmostApplication != .current else { return }
+                    bringBack()
+                }
+            }
+        }
+    }
+
     static func closed(dismissed: Bool) {
         if dismissed { UserDefaults.standard.set(installID, forKey: shownKey) }
         window = nil
+        if let settingsObserver { NSWorkspace.shared.notificationCenter.removeObserver(settingsObserver) }
+        settingsObserver = nil
     }
 }
 
