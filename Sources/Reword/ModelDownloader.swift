@@ -12,9 +12,32 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
     @Published private(set) var verifying = false
 
     private var task: URLSessionDownloadTask?
+    private var folderWatch: DispatchSourceFileSystemObject?
     private var verifyTask: Task<Void, Never>?
     private var downloadingQuant: ModelQuant?
     private lazy var session = URLSession(configuration: .default, delegate: self, delegateQueue: .main)
+
+    override init() {
+        super.init()
+        watchModelsFolder()
+    }
+
+    /// Notices the model file being added or removed outside the app (e.g. deleted in Finder).
+    private func watchModelsFolder() {
+        try? ModelStore.ensureDirectory()
+        let fd = open(ModelStore.directory.path, O_EVTONLY)
+        guard fd >= 0 else { return }
+        let source = DispatchSource.makeFileSystemObjectSource(fileDescriptor: fd, eventMask: [.write, .delete, .rename], queue: .main)
+        source.setEventHandler { [weak self] in
+            MainActor.assumeIsolated {
+                guard let self, self.task == nil, !self.verifying else { return }
+                self.isInstalled = ModelStore.isInstalled
+            }
+        }
+        source.setCancelHandler { close(fd) }
+        source.resume()
+        folderWatch = source
+    }
 
     /// Re-checks the selected model file (after the quantization changes).
     func refresh() {

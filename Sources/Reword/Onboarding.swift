@@ -87,7 +87,7 @@ struct OnboardingView: View {
                         } else if let progress = downloader.progress {
                             ProgressView(value: progress).frame(width: 90)
                         } else if !downloader.isInstalled {
-                            Button("Retry", action: downloader.start)
+                            Button(downloader.error == nil ? "Download" : "Retry", action: downloader.start)
                         }
                     }
                     step(done: axTrusted, title: "Allow Accessibility",
@@ -129,7 +129,7 @@ struct OnboardingView: View {
             }
 
             HStack {
-                Text("You can reopen this from the menu: Getting Started…").font(.caption).foregroundStyle(.tertiary)
+                Text("You can reopen this from the menu: Onboarding…").font(.caption).foregroundStyle(.tertiary)
                 Spacer()
                 Button("Try It") { close(); tryIt() }
                 Button("Done", action: close).keyboardShortcut(.defaultAction)
@@ -153,7 +153,7 @@ struct OnboardingView: View {
             return "Downloading automatically (\(size)), \(progress.formatted(.percent.precision(.fractionLength(0)))). One time; then it works offline."
         }
         if let error = downloader.error { return "Download failed: \(error)" }
-        return "Downloads automatically (Hy-MT2 1.8B, \(size)). One time; then it works offline."
+        return "Not downloaded (Hy-MT2 1.8B, \(size)). It downloads automatically when Reword starts."
     }
 
     private func display(_ action: ShortcutAction) -> String {

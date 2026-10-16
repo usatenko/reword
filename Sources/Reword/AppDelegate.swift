@@ -80,7 +80,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menuItems[.screenshotTranslate] = menu.addItem(withTitle: "Screenshot Translate", action: #selector(menuTranslateScreenshot), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
-        menu.addItem(withTitle: "Getting Started…", action: #selector(openOnboarding), keyEquivalent: "")
+        menu.addItem(withTitle: "Onboarding…", action: #selector(openOnboarding), keyEquivalent: "")
         menu.addItem(withTitle: "About Reword", action: #selector(openAbout), keyEquivalent: "")
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit Reword", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
