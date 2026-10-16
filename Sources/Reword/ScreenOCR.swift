@@ -24,15 +24,20 @@ enum ScreenOCR {
 
     /// Lets the user drag a region, then returns the recognized text.
     @MainActor
-    static func captureAndRecognize() async throws -> String {
+    /// `onSelected` runs while the selection overlay is still up, so the app can show its window and keep
+    /// focus (otherwise macOS hands focus to the previous app when the overlay closes).
+    static func captureAndRecognize(onSelected: () -> Void = {}, onCaptured: () -> Void = {}) async throws -> String {
         if !hasScreenAccess {
             CGRequestScreenCaptureAccess()
             PrivacyPane.screenRecording.open()
             throw Failure.permission
         }
         guard let region = await RegionSelector.select() else { throw Failure.cancelled }
+        onSelected()
+        RegionSelector.dismiss()
         try await Task.sleep(for: .milliseconds(120))          // let the overlay leave the screen
         let image = try await capture(region)
+        onCaptured()                                            // the UI shows "Reading text…" from here
         do {
             return try await recognize(image)
         } catch {
@@ -77,6 +82,7 @@ final class RegionSelector {
 
     static func select() async -> NSRect? {
         active?.finish(nil)
+        active?.close()
         let selector = RegionSelector()
         active = selector
         return await withCheckedContinuation { cont in
@@ -115,11 +121,19 @@ final class RegionSelector {
         guard let continuation else { return }
         self.continuation = nil
         NSCursor.pop()
+        let selected = rect.flatMap { $0.width >= 4 && $0.height >= 4 ? $0 : nil }
+        if selected == nil { close() }                          // on success the caller dismisses it
+        continuation.resume(returning: selected)
+    }
+
+    private func close() {
         windows.forEach { $0.orderOut(nil) }
         windows.removeAll()
         if RegionSelector.active === self { RegionSelector.active = nil }
-        continuation.resume(returning: rect.flatMap { $0.width >= 4 && $0.height >= 4 ? $0 : nil })
     }
+
+    /// Removes the overlay after a successful selection.
+    static func dismiss() { active?.close() }
 
     private final class OverlayWindow: NSWindow {
         override var canBecomeKey: Bool { true }

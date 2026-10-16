@@ -1,9 +1,14 @@
 name: Release
 
-# Push a tag like v1.0.0 to build, sign (Developer ID), notarize and publish Reword-1.0.0.dmg.
+# Run manually (Actions › Release › Run workflow) with a version like 1.0.0 to build, sign (Developer ID),
+# notarize and publish Reword-1.0.0.dmg as release v1.0.0 from the selected commit.
 on:
-  push:
-    tags: ['v*']
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Version to release, e.g. 1.0.0
+        required: true
+        type: string
 
 permissions:
   contents: write
@@ -11,7 +16,7 @@ permissions:
 jobs:
   release:
     runs-on: macos-26
-    # Signing secrets live in this environment; protect it (required reviewers, v* tags only) in repo settings.
+    # Signing secrets live in this environment; protect it (required reviewers, main only) in repo settings.
     environment: release
     env:
       KEYCHAIN: ${{ github.workspace }}/../signing.keychain-db
@@ -52,14 +57,16 @@ jobs:
           NOTARY_KEY_ID: ${{ secrets.NOTARY_KEY_ID }}
           NOTARY_ISSUER_ID: ${{ secrets.NOTARY_ISSUER_ID }}
           REQUIRE_NOTARIZATION: "1"
-        run: scripts/release.sh "${GITHUB_REF_NAME#v}"
+          VERSION: ${{ inputs.version }}
+        run: scripts/release.sh "$VERSION"
 
       - name: Publish GitHub release
         env:
           GH_TOKEN: ${{ github.token }}
+          VERSION: ${{ inputs.version }}
         run: |
-          gh release create "$GITHUB_REF_NAME" dist/*.dmg dist/*.sha256 \
-            --title "Reword ${GITHUB_REF_NAME#v}" --generate-notes
+          gh release create "v$VERSION" dist/*.dmg dist/*.sha256 --target "$GITHUB_SHA" \
+            --title "Reword $VERSION" --generate-notes
 
       - name: Clean up signing material
         if: always()

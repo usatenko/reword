@@ -151,6 +151,15 @@ struct TranslatorView: View {
         VStack(spacing: 6) {
             topBar
             languageCard
+            if let line = model.inputStatus ?? model.status {
+                HStack(spacing: 6) {
+                    ProgressView().controlSize(.mini)
+                    Text(line).font(.system(size: 11)).foregroundStyle(.secondary)
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(.horizontal, 6)
+                .transition(.opacity)
+            }
             // Input above, translation below; the divider between them can be dragged.
             InputOutputSplit(top: InputPane(model: model), bottom: OutputPane(model: model))
                 .frame(minHeight: InputOutputSplit<InputPane, OutputPane>.minimumHeight, maxHeight: .infinity)
@@ -478,7 +487,7 @@ struct SettingsView: View {
                 }
                 if let loginError { Text(loginError).font(.caption).foregroundStyle(.orange) }
                 Picker("Menu bar icon", selection: $menuIcon) {
-                    ForEach(MenuBarIcon.choices, id: \.self) { Image(systemName: $0).tag($0) }
+                    ForEach(MenuBarIcon.choices, id: \.self) { Image(nsImage: MenuBarIcon.image($0, size: 16)).tag($0) }
                 }
                 .pickerStyle(.segmented)
                 .fixedSize()
@@ -561,7 +570,7 @@ struct SettingsView: View {
             axTrusted = SelectionReader.isTrusted
             screenAccess = ScreenOCR.hasScreenAccess
             loginStatus = SMAppService.mainApp.status
-            Task { modelLoaded = await HyMTEngine.shared.isLoaded }
+            modelLoaded = HyMTEngine.shared.isLoaded
         }
     }
 

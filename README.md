@@ -33,6 +33,10 @@ Shortcuts can be changed in Settings.
 - **Small touches:** read aloud, copy, launch at login, and the model unloads from memory when idle.
 
 <p align="center">
+  <img src="docs/screenshots/welcome.png" alt="Welcome window: where Reword lives, its shortcuts and a setup checklist" width="480">
+</p>
+
+<p align="center">
   <img src="docs/screenshots/settings.png" alt="Reword settings: launch at login, menu bar icon, languages, shortcuts, permissions and model" width="440">
   <img src="docs/screenshots/about.png" alt="About Reword window" width="390">
 </p>
@@ -81,12 +85,12 @@ Command line, using the same engine:
 
 ## Releases
 
-Pushing a tag such as `v1.0.0` runs `.github/workflows/release.yml` on a macOS runner. It builds the app,
+Running the **Release** workflow manually (Actions › Release › Run workflow, version `1.0.0`) builds the app on a macOS runner,
 signs it with a Developer ID Application certificate (hardened runtime, secure timestamp), packages
 `Reword-1.0.0.dmg`, notarizes and staples it, and publishes it with its SHA-256 to GitHub Releases.
 
-The job runs in the protected `release` environment: only `v*` tags can deploy to it, each run waits for
-an owner's approval, and a tag ruleset limits creating, moving or deleting `v*` tags to admins. Keep the
+The job runs in the protected `release` environment: only `main` can deploy to it, each run waits for
+an owner's approval, and a tag ruleset stops `v*` tags from being moved or deleted. Keep the
 signing secrets as **environment** secrets of `release`, not repository secrets.
 
 Secrets used by the workflow:

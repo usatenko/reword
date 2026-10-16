@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import Synchronization
 import llama
 
 /// A translator that runs entirely on this Mac.
@@ -163,7 +164,9 @@ actor HyMTEngine: TranslationEngine {
     private var loadedPath: String?
     private var unloadTask: Task<Void, Never>?
 
-    var isLoaded: Bool { context != nil }
+    /// Readable without waiting for the actor, which may be busy loading the model.
+    private nonisolated let loaded = Mutex(false)
+    nonisolated var isLoaded: Bool { loaded.withLock { $0 } }
 
     private init() {}
 
@@ -226,7 +229,7 @@ actor HyMTEngine: TranslationEngine {
     private func scheduleUnload() {
         unloadTask?.cancel()
         let seconds = UserDefaults.standard.integer(forKey: Prefs.idleUnloadSeconds)
-        guard seconds > 0, isLoaded else { return }
+        guard seconds > 0, context != nil else { return }
         unloadTask = Task {
             try? await Task.sleep(for: .seconds(seconds))
             guard !Task.isCancelled else { return }
@@ -242,6 +245,7 @@ actor HyMTEngine: TranslationEngine {
         context = nil
         model = nil
         loadedPath = nil
+        loaded.withLock { $0 = false }
     }
 
     /// Frees llama.cpp state; the Metal backend asserts at process exit if buffers are still alive.
@@ -283,6 +287,7 @@ actor HyMTEngine: TranslationEngine {
         model = loaded
         context = ctx
         loadedPath = ModelStore.localURL.path
+        self.loaded.withLock { $0 = true }
     }
 
     /// `special` parses control markers such as the role tokens; it is only enabled for the template parts.

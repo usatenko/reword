@@ -29,8 +29,15 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
             .screenshotTranslate: { [weak self] in Task { await self?.translateScreenshot() } },
         ]
         Hotkeys.apply()
+        NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard event.modifierFlags.intersection(.deviceIndependentFlagsMask) == .command,
+                  event.charactersIgnoringModifiers == "w", let window = NSApp.keyWindow else { return event }
+            if window === self?.panel { window.orderOut(nil) } else { window.performClose(nil) }
+            return nil
+        }
 
         if CommandLine.arguments.contains("--show") { showInputTranslation() }   // used by scripted UI tests
+        else if OnboardingWindow.shouldShowOnLaunch { openOnboarding() }
         #if DEBUG
         if let i = CommandLine.arguments.firstIndex(of: "--readme-shots"), CommandLine.arguments.indices.contains(i + 1) {
             let dir = URL(fileURLWithPath: CommandLine.arguments[i + 1])
@@ -69,6 +76,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         menuItems[.screenshotTranslate] = menu.addItem(withTitle: "Screenshot Translate", action: #selector(menuTranslateScreenshot), keyEquivalent: "")
         menu.addItem(.separator())
         menu.addItem(withTitle: "Settings…", action: #selector(openSettings), keyEquivalent: ",")
+        menu.addItem(withTitle: "Getting Started…", action: #selector(openOnboarding), keyEquivalent: "")
         menu.addItem(withTitle: "About Reword", action: #selector(openAbout), keyEquivalent: "")
         menu.addItem(.separator())
         let quit = menu.addItem(withTitle: "Quit Reword", action: #selector(NSApplication.terminate(_:)), keyEquivalent: "q")
@@ -80,15 +88,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     private func updateStatusIcon() {
         let name = MenuBarIcon.current
         guard statusItem.button?.image?.accessibilityDescription != name else { return }
-        statusItem.button?.image = NSImage(systemSymbolName: name, accessibilityDescription: name)
+        let image = MenuBarIcon.image(name)
+        image.accessibilityDescription = name
+        statusItem.button?.image = image
     }
 
-    /// Shows each action's current shortcut next to its menu item.
+    /// Shows each action's current shortcut as the item's key equivalent, right-aligned like ⌘Q.
     func menuNeedsUpdate(_ menu: NSMenu) {
         for (action, item) in menuItems {
             let shortcut = Shortcut.current(action)
-            let base = item.title.components(separatedBy: "\t")[0]
-            item.title = shortcut.map { "\(base)\t\($0.display)" } ?? base
+            item.keyEquivalent = shortcut?.menuKeyEquivalent ?? ""
+            item.keyEquivalentModifierMask = shortcut?.modifierFlags ?? []
         }
     }
 
@@ -122,16 +132,21 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func translateScreenshot() async {
-        // Hide the panel even when pinned, so it isn't captured; it comes back with the result.
-        let wasVisible = panel.isVisible
-        if wasVisible { panel.orderOut(nil) }
         do {
-            let text = try await ScreenOCR.captureAndRecognize()
-            showPanel()
+            let text = try await ScreenOCR.captureAndRecognize(
+                onSelected: {
+                    // Keep the window out of the capture, then show it before the overlay closes so Reword keeps focus.
+                    self.panel.sharingType = .none
+                    self.model.clear()
+                    self.model.inputStatus = "Reading text from screenshot…"
+                    self.showPanel()
+                },
+                onCaptured: { self.panel.sharingType = .readOnly })
             model.load(text)
         } catch ScreenOCR.Failure.cancelled {
-            if wasVisible && model.pinned { showPanel() }
+            panel.sharingType = .readOnly
         } catch {
+            panel.sharingType = .readOnly
             showPanel()
             model.clear()
             model.notice = error.localizedDescription
@@ -190,8 +205,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window !== panel else { return }
         if window === settingsWindow { settingsWindow = nil }
-        // Once Settings and About are both closed, the panel floats again.
-        let otherOpen = [settingsWindow, AboutWindow.current].contains { $0 != nil && $0 !== window && $0!.isVisible }
+        if window === OnboardingWindow.current { OnboardingWindow.closed() }
+        // Once Settings, About and the welcome window are all closed, the panel floats again.
+        let otherOpen = [settingsWindow, AboutWindow.current, OnboardingWindow.current]
+            .contains { $0 != nil && $0 !== window && $0!.isVisible }
         if !otherOpen { panel.level = .floating }
     }
 
@@ -200,6 +217,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         // Keep the panel while the system language-download sheet or our settings window is in front.
         if panel.attachedSheet != nil || settingsWindow?.isKeyWindow == true { return }
         panel.orderOut(nil)
+    }
+
+    @objc private func openOnboarding() {
+        stepPanelAside()
+        OnboardingWindow.show(delegate: self, tryIt: { [weak self] in self?.showInputTranslation() })
     }
 
     @objc private func openAbout() {
@@ -265,6 +287,11 @@ extension AppDelegate {
         try? await Task.sleep(for: .seconds(1))
         if let about = AboutWindow.current { await snapshot(about, to: dir.appendingPathComponent("about.png")) }
         AboutWindow.current?.close()
+
+        openOnboarding()
+        try? await Task.sleep(for: .seconds(1))
+        if let welcome = OnboardingWindow.current { await snapshot(welcome, to: dir.appendingPathComponent("welcome.png")) }
+        OnboardingWindow.current?.close()
         NSApp.terminate(nil)
     }
 

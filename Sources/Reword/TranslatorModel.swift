@@ -44,6 +44,10 @@ final class TranslatorModel: ObservableObject {
     }
     /// A one-line message shown above the results, e.g. an OCR problem.
     @Published var notice: String?
+    /// Translation progress ("Loading the translation model…"), shown with a spinner in the translation box.
+    @Published var status: String?
+    /// Input progress ("Reading text from screenshot…"), shown with a spinner in the input box.
+    @Published var inputStatus: String?
     /// Bumped to move keyboard focus into the input field.
     @Published private(set) var focusRequest = 0
 
@@ -92,6 +96,7 @@ final class TranslatorModel: ObservableObject {
         lastRequest = requestKey
         task?.cancel()
         notice = nil
+        status = nil
         let text = input.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !text.isEmpty else {
             results = []
@@ -119,6 +124,7 @@ final class TranslatorModel: ObservableObject {
         results = engines.map { EngineResult(id: $0.id, name: $0.name, detail: $0.detail, state: .loading) }
 
         task = Task {
+            if !HyMTEngine.shared.isLoaded, run == self.run { status = "Loading the translation model…" }
             for engine in engines {
                 let id = engine.id
                 let state: EngineResult.State
@@ -144,6 +150,7 @@ final class TranslatorModel: ObservableObject {
 
     private func update(_ id: String, _ state: EngineResult.State, run: Int) {
         guard run == self.run, let index = results.firstIndex(where: { $0.id == id }) else { return }
+        status = nil                                     // output has started (or failed): the progress line goes
         // A late streaming chunk must not overwrite the final result or a longer chunk that arrived first.
         if case .streaming = state, case .done = results[index].state { return }
         if case .streaming = state, case .failed = results[index].state { return }
@@ -176,6 +183,7 @@ final class TranslatorModel: ObservableObject {
     }
 
     func load(_ text: String) {
+        inputStatus = nil
         input = text
         sourceChoice = Self.auto
         targetChoice = Self.auto
@@ -187,6 +195,8 @@ final class TranslatorModel: ObservableObject {
         lastRequest = nil
         task?.cancel()
         notice = nil
+        status = nil
+        inputStatus = nil
         run += 1
         input = ""
         results = []

@@ -1,0 +1,191 @@
+import AppKit
+import ServiceManagement
+import SwiftUI
+
+/// First-launch welcome: where Reword lives, its shortcuts, and a live setup checklist.
+@MainActor
+enum OnboardingWindow {
+    static let shownKey = "onboardingShown"
+    private static var window: NSWindow?
+    static var current: NSWindow? { window }
+
+    static var shouldShowOnLaunch: Bool { !UserDefaults.standard.bool(forKey: shownKey) }
+
+    static func show(delegate: NSWindowDelegate?, tryIt: @escaping () -> Void) {
+        UserDefaults.standard.set(true, forKey: shownKey)
+        if window == nil {
+            let host = NSHostingController(rootView: OnboardingView(tryIt: tryIt, close: { window?.performClose(nil) }))
+            host.sizingOptions = [.preferredContentSize]
+            let window = NSWindow(contentViewController: host)
+            window.title = "Welcome to Reword"
+            window.styleMask = [.titled, .closable]
+            window.isReleasedWhenClosed = false
+            self.window = window
+        }
+        window?.delegate = delegate
+        if window?.isVisible != true { window?.center() }
+        NSApp.activate()
+        window?.makeKeyAndOrderFront(nil)
+        window?.orderFrontRegardless()
+    }
+
+    /// Dropped on close so its permission polling stops.
+    static func closed() { window = nil }
+}
+
+struct OnboardingView: View {
+    var tryIt: () -> Void
+    var close: () -> Void
+
+    @ObservedObject private var downloader = ModelDownloader.shared
+    @State private var axTrusted = SelectionReader.isTrusted
+    @State private var screenAccess = ScreenOCR.hasScreenAccess
+    @State private var screenAccessAtLaunch = ScreenOCR.hasScreenAccess
+    @State private var loginStatus = SMAppService.mainApp.status
+
+    var body: some View {
+        VStack(alignment: .leading, spacing: 16) {
+            HStack(spacing: 14) {
+                Image(nsImage: NSApp.applicationIconImage).resizable().frame(width: 64, height: 64)
+                VStack(alignment: .leading, spacing: 4) {
+                    Text("Welcome to Reword").font(.title2.weight(.semibold))
+                    Text("A very simple offline translator. Your text never leaves this Mac.")
+                        .foregroundStyle(.secondary)
+                }
+            }
+
+            GroupBox {
+                HStack(alignment: .top, spacing: 10) {
+                    Image(nsImage: MenuBarIcon.image(MenuBarIcon.current, size: 22))
+                        .padding(6)
+                        .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 6))
+                    VStack(alignment: .leading, spacing: 3) {
+                        Text("Reword lives in the menu bar").font(.headline)
+                        Text("Look for this icon at the top right of your screen. There's no Dock icon: click it for the menu, Settings and Quit.")
+                            .font(.callout).foregroundStyle(.secondary)
+                            .fixedSize(horizontal: false, vertical: true)
+                    }
+                }
+                .frame(maxWidth: .infinity, alignment: .leading)
+                .padding(4)
+            }
+
+            GroupBox("Shortcuts") {
+                VStack(spacing: 6) {
+                    shortcutRow(.selectionTranslate, "Select text in any app, then press")
+                    shortcutRow(.screenshotTranslate, "Drag over any part of the screen after pressing")
+                    shortcutRow(.inputTranslate, "Open the window to type or paste")
+                }
+                .padding(4)
+            }
+
+            GroupBox("Set up") {
+                VStack(spacing: 10) {
+                    step(done: downloader.isInstalled, title: "Download the translation model",
+                         detail: "Hy-MT2 1.8B, \(ByteCountFormatter.string(fromByteCount: ModelStore.expectedBytes, countStyle: .file)). One time; translation then works offline.") {
+                        if downloader.verifying {
+                            ProgressView().controlSize(.small)
+                        } else if let progress = downloader.progress {
+                            ProgressView(value: progress).frame(width: 90)
+                        } else if !downloader.isInstalled {
+                            Button("Download", action: downloader.start)
+                        }
+                    }
+                    step(done: axTrusted, title: "Allow Accessibility",
+                         detail: "Lets Reword read the text you select (\(display(.selectionTranslate))).") {
+                        if !axTrusted {
+                            Button("Open Settings") {
+                                SelectionReader.promptForAccessibility()
+                                PrivacyPane.accessibility.open()
+                            }
+                        }
+                    }
+                    step(done: screenAccess && screenAccessAtLaunch, title: "Allow Screen Recording",
+                         detail: screenAccess && !screenAccessAtLaunch
+                            ? "Allowed. Restart Reword so it takes effect."
+                            : "Lets Reword read text from screenshots (\(display(.screenshotTranslate))).") {
+                        if !screenAccess {
+                            Button("Open Settings") {
+                                CGRequestScreenCaptureAccess()
+                                PrivacyPane.screenRecording.open()
+                            }
+                        } else if !screenAccessAtLaunch {
+                            Button("Restart Reword", action: Self.relaunch)
+                        }
+                    }
+                    step(done: loginStatus == .enabled, title: "Launch at login",
+                         detail: "Optional: keep Reword ready after you restart your Mac.") {
+                        Toggle("", isOn: Binding(
+                            get: { loginStatus == .enabled || loginStatus == .requiresApproval },
+                            set: { on in
+                                try? on ? SMAppService.mainApp.register() : SMAppService.mainApp.unregister()
+                                loginStatus = SMAppService.mainApp.status
+                            }))
+                        .labelsHidden()
+                        .toggleStyle(.switch)
+                        .controlSize(.small)
+                    }
+                }
+                .padding(4)
+            }
+
+            HStack {
+                Text("You can reopen this from the menu: Getting Started…").font(.caption).foregroundStyle(.tertiary)
+                Spacer()
+                Button("Try It") { close(); tryIt() }
+                Button("Done", action: close).keyboardShortcut(.defaultAction)
+            }
+        }
+        .padding(20)
+        .frame(width: 520)
+        .fixedSize(horizontal: false, vertical: true)
+        .onReceive(Timer.publish(every: 1, on: .main, in: .common).autoconnect()) { _ in
+            axTrusted = SelectionReader.isTrusted
+            screenAccess = ScreenOCR.hasScreenAccess
+            loginStatus = SMAppService.mainApp.status
+        }
+    }
+
+    private func display(_ action: ShortcutAction) -> String {
+        Shortcut.current(action)?.display ?? "no shortcut set"
+    }
+
+    private func shortcutRow(_ action: ShortcutAction, _ text: String) -> some View {
+        HStack {
+            Text(text).foregroundStyle(.secondary)
+            Spacer()
+            Text(display(action))
+                .monospaced()
+                .padding(.horizontal, 8)
+                .padding(.vertical, 2)
+                .background(Color.primary.opacity(0.08), in: RoundedRectangle(cornerRadius: 5))
+        }
+        .font(.callout)
+    }
+
+    private func step<Accessory: View>(done: Bool, title: String, detail: String,
+                                       @ViewBuilder accessory: () -> Accessory) -> some View {
+        HStack(alignment: .center, spacing: 10) {
+            Image(systemName: done ? "checkmark.circle.fill" : "circle")
+                .font(.system(size: 18))
+                .foregroundStyle(done ? Color.green : Color.secondary)
+            VStack(alignment: .leading, spacing: 2) {
+                Text(title).font(.callout.weight(.medium))
+                Text(detail).font(.caption).foregroundStyle(.secondary).fixedSize(horizontal: false, vertical: true)
+            }
+            Spacer()
+            accessory()
+        }
+    }
+
+    /// Screen Recording only takes effect in a new process. Reopen after this one has fully exited, so the new
+    /// instance can register the global shortcuts.
+    private static func relaunch() {
+        let task = Process()
+        task.executableURL = URL(fileURLWithPath: "/bin/sh")
+        task.arguments = ["-c", "while kill -0 \"$0\" 2>/dev/null; do sleep 0.2; done; /usr/bin/open \"$1\"",
+                          String(ProcessInfo.processInfo.processIdentifier), Bundle.main.bundlePath]
+        try? task.run()
+        NSApp.terminate(nil)
+    }
+}
