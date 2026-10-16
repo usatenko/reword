@@ -56,7 +56,7 @@ Vietnamese.
 ## Requirements
 
 - Mac with Apple silicon, macOS 26 or later
-- About 1.1 GB of disk space for the translation model (downloaded on first use)
+- About 1.1 GB of disk space for the translation model (downloaded automatically on first launch)
 - Accessibility access to read selected text, Screen Recording access for screenshots
 
 ## Under the hood
@@ -65,7 +65,8 @@ Reword runs [tencent/Hy-MT2-1.8B](https://huggingface.co/tencent/Hy-MT2-1.8B), a
 model (Apache-2.0), through [llama.cpp](https://github.com/ggml-org/llama.cpp) on the Mac's GPU. Choose the
 Q4_K_M (1.1 GB, default), Q6_K (1.5 GB) or Q8_0 (1.9 GB) quantization in Settings. Text recognition uses
 Apple's Vision framework, and language detection uses Apple's NaturalLanguage framework, both on-device.
-The only network request Reword makes is the model download you start yourself. Models are stored in
+The only network request Reword makes is downloading the model, once, on first launch (or when you pick
+a different quantization). Models are stored in
 `~/Library/Application Support/com.ou.Reword/Models/`.
 
 ## Build from source
@@ -106,6 +107,11 @@ Secrets used by the workflow:
 The same script runs locally: `scripts/release.sh 1.0.0` signs with the first Developer ID identity in
 your keychain and notarizes when `NOTARY_PROFILE` (a `notarytool store-credentials` profile) or the API
 key variables are set.
+
+## Support Reword
+
+Reword is free and open source. If it saves you time, you can support its development with a tip via
+[Revolut](https://revolut.me/to_oleksii). Thank you!
 
 ## License
 

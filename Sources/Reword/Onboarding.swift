@@ -81,14 +81,13 @@ struct OnboardingView: View {
 
             GroupBox("Set up") {
                 VStack(spacing: 10) {
-                    step(done: downloader.isInstalled, title: "Download the translation model",
-                         detail: "Hy-MT2 1.8B, \(ByteCountFormatter.string(fromByteCount: ModelStore.expectedBytes, countStyle: .file)). One time; translation then works offline.") {
+                    step(done: downloader.isInstalled, title: "Translation model", detail: modelDetail) {
                         if downloader.verifying {
                             ProgressView().controlSize(.small)
                         } else if let progress = downloader.progress {
                             ProgressView(value: progress).frame(width: 90)
                         } else if !downloader.isInstalled {
-                            Button("Download", action: downloader.start)
+                            Button("Retry", action: downloader.start)
                         }
                     }
                     step(done: axTrusted, title: "Allow Accessibility",
@@ -144,6 +143,17 @@ struct OnboardingView: View {
             screenAccess = ScreenOCR.hasScreenAccess
             loginStatus = SMAppService.mainApp.status
         }
+    }
+
+    private var modelDetail: String {
+        let size = ByteCountFormatter.string(fromByteCount: ModelStore.expectedBytes, countStyle: .file)
+        if downloader.isInstalled { return "Hy-MT2 1.8B is ready. Translation works offline." }
+        if downloader.verifying { return "Checking the download…" }
+        if let progress = downloader.progress {
+            return "Downloading automatically (\(size)), \(progress.formatted(.percent.precision(.fractionLength(0)))). One time; then it works offline."
+        }
+        if let error = downloader.error { return "Download failed: \(error)" }
+        return "Downloads automatically (Hy-MT2 1.8B, \(size)). One time; then it works offline."
     }
 
     private func display(_ action: ShortcutAction) -> String {

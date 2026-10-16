@@ -18,10 +18,14 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     lazy var panel = makePanel()
     var settingsWindow: NSWindow?
     private var menuItems: [ShortcutAction: NSMenuItem] = [:]
+    /// Debug-only README capture: keeps the unpinned window visible while other windows take focus.
+    var capturingShots = false
 
     func applicationDidFinishLaunching(_ notification: Notification) {
         Prefs.registerDefaults()
         setUpStatusItem()
+        // First run (or the model file was removed): fetch the selected model right away so Reword is ready.
+        if !ModelStore.isInstalled { ModelDownloader.shared.start() }
 
         Hotkeys.handlers = [
             .inputTranslate: { [weak self] in self?.showInputTranslation() },
@@ -213,7 +217,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     func windowDidResignKey(_ notification: Notification) {
-        guard (notification.object as? NSWindow) === panel, !model.pinned else { return }
+        guard (notification.object as? NSWindow) === panel, !model.pinned, !capturingShots else { return }
         // Keep the panel while the system language-download sheet or our settings window is in front.
         if panel.attachedSheet != nil || settingsWindow?.isKeyWindow == true { return }
         panel.orderOut(nil)
@@ -262,9 +266,8 @@ import ScreenCaptureKit
 extension AppDelegate {
     func captureReadmeShots(to dir: URL) async {
         try? FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
-        let wasPinned = model.pinned
-        model.pinned = true
-        defer { model.pinned = wasPinned }
+        // Show the default (unpinned, "Auto-hide") look; auto-hide is paused while capturing instead.
+        capturingShots = true
 
         model.clear()
         showPanel()

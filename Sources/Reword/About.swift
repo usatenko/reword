@@ -6,6 +6,7 @@ enum AppInfo {
     static var build: String { Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "0" }
     static var versionLine: String { "Version \(version) (\(build))" }
     static let repository = URL(string: "https://github.com/usatenko/reword")!
+    static let donate = URL(string: "https://revolut.me/to_oleksii")!
 
     /// Licenses of bundled third-party code, shipped in the app's Resources.
     static var notices: String {
@@ -60,6 +61,7 @@ struct AboutView: View {
             .foregroundStyle(.secondary)
             HStack(spacing: 12) {
                 Link("GitHub", destination: AppInfo.repository)
+                Link("Support Reword ❤️", destination: AppInfo.donate)
                 Button(showNotices ? "Hide Acknowledgements" : "Acknowledgements") {
                     withAnimation(.snappy) { showNotices.toggle() }
                 }
