@@ -25,9 +25,9 @@ translation in a small window, without your words ever leaving the computer.
 Shortcuts can be changed in Settings.
 
 - **Translates as you type.** No button to press; Return translates immediately.
-- **Picks the direction for you.** Set a primary and a secondary language: text in your primary language
-  is translated into the secondary one, and anything else into your primary one. You can always choose the
-  languages by hand.
+- **Picks the direction for you.** Like Google Translate, Reword remembers the languages you use and translates
+  into the most recent one that isn't the text's own language — so English goes to Ukrainian, Ukrainian back
+  to English, and a new pick in the window becomes the new default. It starts from your Mac's language list.
 - **Stays out of the way.** It lives in the menu bar. The window hides when you switch apps, or you can pin
   it next to your work. It remembers its size and position.
 - **Small touches:** read aloud, copy, launch at login, and the model unloads from memory when idle.
