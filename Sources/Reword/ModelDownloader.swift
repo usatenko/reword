@@ -119,6 +119,7 @@ final class ModelDownloader: NSObject, ObservableObject, URLSessionDownloadDeleg
                 self.verifying = false
                 self.verifyTask = nil
                 self.isInstalled = ModelStore.isInstalled
+                if self.isInstalled { Task.detached(priority: .utility) { await HyMTEngine.shared.compileShadersIfNeeded() } }
             }
         }
     }

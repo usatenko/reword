@@ -39,6 +39,8 @@ enum ScreenOCR {
         let image = try await capture(region)
         onCaptured()                                            // the UI shows "Reading text…" from here
         do {
+            let start = ContinuousClock.now
+            defer { log.info("OCR took \(ContinuousClock.now - start, privacy: .public)") }
             return try await recognize(image)
         } catch {
             log.error("OCR failed: \(error.localizedDescription, privacy: .public)")
@@ -55,6 +57,29 @@ enum ScreenOCR {
                 if let image { cont.resume(returning: image) }
                 else { cont.resume(throwing: Failure.capture(error?.localizedDescription ?? "unknown error")) }
             }
+        }
+    }
+
+    /// Runs OCR once on a small rendered sample so Vision compiles its model before the first real screenshot
+    /// (otherwise the first read takes several seconds).
+    static func prewarm() {
+        Task.detached(priority: .utility) {
+            let width = 320, height = 64
+            guard let ctx = CGContext(data: nil, width: width, height: height, bitsPerComponent: 8, bytesPerRow: 0,
+                                      space: CGColorSpaceCreateDeviceRGB(),
+                                      bitmapInfo: CGImageAlphaInfo.premultipliedLast.rawValue) else { return }
+            ctx.setFillColor(CGColor(gray: 1, alpha: 1))
+            ctx.fill(CGRect(x: 0, y: 0, width: width, height: height))
+            let graphics = NSGraphicsContext(cgContext: ctx, flipped: false)
+            NSGraphicsContext.saveGraphicsState()
+            NSGraphicsContext.current = graphics
+            ("Reword warm-up" as NSString).draw(at: NSPoint(x: 12, y: 18),
+                                                withAttributes: [.font: NSFont.systemFont(ofSize: 26), .foregroundColor: NSColor.black])
+            NSGraphicsContext.restoreGraphicsState()
+            guard let image = ctx.makeImage() else { return }
+            let start = ContinuousClock.now
+            _ = try? await recognize(image)
+            log.info("OCR warm-up took \(ContinuousClock.now - start, privacy: .public)")
         }
     }
 

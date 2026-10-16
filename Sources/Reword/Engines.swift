@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import OSLog
 import Synchronization
 import llama
 
@@ -223,6 +224,21 @@ actor HyMTEngine: TranslationEngine {
     func warmUp() {
         try? loadIfNeeded()
         scheduleUnload()
+    }
+
+    /// The GPU shaders compile on the first generation after installing a new build (~8 s), and macOS caches
+    /// them afterwards. Pay that once in the background with a throwaway translation.
+    func compileShadersIfNeeded() async {
+        let key = "shadersCompiledFor"
+        let build = (Bundle.main.object(forInfoDictionaryKey: "CFBundleShortVersionString") as? String ?? "")
+            + "-" + (Bundle.main.object(forInfoDictionaryKey: "CFBundleVersion") as? String ?? "")
+        guard ModelStore.isInstalled, UserDefaults.standard.string(forKey: key) != build else { return }
+        let start = ContinuousClock.now
+        if (try? await translate("Hello", from: "en", to: "uk") { _ in }) != nil {
+            UserDefaults.standard.set(build, forKey: key)
+            Logger(subsystem: "com.ou.Reword", category: "engine")
+                .info("shader warm-up took \(ContinuousClock.now - start, privacy: .public)")
+        }
     }
 
     /// Frees the model after the idle timeout from Settings (0 = keep loaded).

@@ -27,6 +27,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         setUpEditMenu()
         // First run (or the model file was removed): fetch the selected model right away so Reword is ready.
         if !ModelStore.isInstalled { ModelDownloader.shared.start() }
+        // Compile the OCR model in the background so the first screenshot reads quickly.
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2) {
+            ScreenOCR.prewarm()
+            Task.detached(priority: .utility) { await HyMTEngine.shared.compileShadersIfNeeded() }
+        }
 
         Hotkeys.handlers = [
             .inputTranslate: { [weak self] in self?.showInputTranslation() },
@@ -163,6 +168,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     }
 
     private func translateScreenshot() async {
+        // Load the translation model while the user drags the selection, not at the same time as OCR.
+        Task { await HyMTEngine.shared.warmUp() }
         do {
             let text = try await ScreenOCR.captureAndRecognize(
                 onSelected: {
