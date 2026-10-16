@@ -77,7 +77,14 @@ enum PrivacyPane {
 
 /// Reads the text selected in the frontmost app.
 enum SelectionReader {
-    static var isTrusted: Bool { AXIsProcessTrusted() }
+    /// AXIsProcessTrusted() can keep answering "yes" in a running app after the permission is removed, so
+    /// confirm with a real Accessibility call: macOS refuses it with .apiDisabled when access is gone.
+    static var isTrusted: Bool {
+        guard AXIsProcessTrusted() else { return false }
+        var value: CFTypeRef?
+        let result = AXUIElementCopyAttributeValue(AXUIElementCreateSystemWide(), kAXFocusedApplicationAttribute as CFString, &value)
+        return result != .apiDisabled
+    }
 
     static func promptForAccessibility() {
         let key = kAXTrustedCheckOptionPrompt.takeUnretainedValue() as String

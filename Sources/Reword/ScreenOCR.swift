@@ -20,7 +20,19 @@ enum ScreenOCR {
         }
     }
 
-    static var hasScreenAccess: Bool { CGPreflightScreenCaptureAccess() }
+    /// CGPreflightScreenCaptureAccess() can stay "yes" in a running app after the permission is removed. Without
+    /// Screen Recording access macOS omits the title field of other apps' windows entirely, so its presence is a
+    /// live answer that never prompts; the preflight result is used when there's no other app window to look at.
+    static var hasScreenAccess: Bool {
+        let ownPID = ProcessInfo.processInfo.processIdentifier
+        guard let windows = CGWindowListCopyWindowInfo([.optionOnScreenOnly, .excludeDesktopElements], kCGNullWindowID)
+                as? [[String: Any]] else { return CGPreflightScreenCaptureAccess() }
+        let others = windows.filter {
+            ($0[kCGWindowOwnerPID as String] as? Int32) != ownPID && ($0[kCGWindowLayer as String] as? Int) == 0
+        }
+        guard !others.isEmpty else { return CGPreflightScreenCaptureAccess() }
+        return others.contains { $0[kCGWindowName as String] != nil }
+    }
 
     /// Lets the user drag a region, then returns the recognized text.
     @MainActor

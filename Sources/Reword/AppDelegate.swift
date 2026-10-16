@@ -56,7 +56,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
         #endif
     }
 
+    private var terminating = false
+
     func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        terminating = true                           // windows closed by quitting aren't "dismissed by the user"
         model.cancelAll()                            // stop generating so the engine can be freed right away
         // Free the model off the main thread and reply through the run loop: if terminate() was called from a
         // main-queue job, the main queue stays blocked until it returns, so a MainActor reply would deadlock.
@@ -243,7 +246,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, NSWindowDelegate, NSMe
     func windowWillClose(_ notification: Notification) {
         guard let window = notification.object as? NSWindow, window !== panel else { return }
         if window === settingsWindow { settingsWindow = nil }
-        if window === OnboardingWindow.current { OnboardingWindow.closed() }
+        if window === OnboardingWindow.current { OnboardingWindow.closed(dismissed: !terminating) }
         // Once Settings, About and the welcome window are all closed, the panel floats again.
         let otherOpen = [settingsWindow, AboutWindow.current, OnboardingWindow.current]
             .contains { $0 != nil && $0 !== window && $0!.isVisible }

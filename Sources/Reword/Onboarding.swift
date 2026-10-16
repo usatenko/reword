@@ -20,7 +20,6 @@ enum OnboardingWindow {
     static var shouldShowOnLaunch: Bool { UserDefaults.standard.string(forKey: shownKey) != installID }
 
     static func show(delegate: NSWindowDelegate?, tryIt: @escaping () -> Void) {
-        UserDefaults.standard.set(installID, forKey: shownKey)
         if window == nil {
             let host = NSHostingController(rootView: OnboardingView(tryIt: tryIt, close: { Self.window?.performClose(nil) }))
             host.sizingOptions = [.preferredContentSize]
@@ -38,7 +37,12 @@ enum OnboardingWindow {
     }
 
     /// Dropped on close so its permission polling stops.
-    static func closed() { window = nil }
+    /// Marked as seen only when dismissed (Done, Try It or the close button), not when it opens: if Reword
+    /// restarts while it's open (e.g. for Screen Recording), it comes back.
+    static func closed(dismissed: Bool) {
+        if dismissed { UserDefaults.standard.set(installID, forKey: shownKey) }
+        window = nil
+    }
 }
 
 struct OnboardingView: View {
